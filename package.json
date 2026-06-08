@@ -1,0 +1,19 @@
+{
+  "name": "rpe-team-report-hebrew",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "node server.mjs",
+    "preview": "node server.mjs",
+    "start": "node server.mjs",
+    "check": "node --check assets/app.js && node --check server.mjs && node --check scripts/build.mjs && node --check scripts/verify-routes.mjs",
+    "check:prod": "node scripts/build.mjs && node scripts/verify-routes.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}
