@@ -74,8 +74,15 @@ export interface GpsSession {
   id: string;
   date: string;
   sessionName: string;
-  type: "match" | "training";
+  type: "match" | "training" | "training_match";
+  activityType?: "match" | "training" | "training_match";
+  competition?: string;
+  matchRound?: string;
   opponent?: string;
+  homeAway?: string;
+  result?: string;
+  matchDayRelation?: string;
+  format?: string;
   notes: string;
 }
 

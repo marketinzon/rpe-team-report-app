@@ -1,5 +1,6 @@
 const STORE_KEY = "rpe-team-report-state-v1";
 const PLAYER_SESSION_KEY = "rpe-player-session-v2";
+const CALENDAR_LOAD_PLANS_KEY = "rpe-calendar-load-plans-v1";
 const RAW_RPE_ENV = window.RPE_ENV || null;
 const STORAGE_DIAGNOSTICS = {
   envLoaded: Boolean(RAW_RPE_ENV),
@@ -24,13 +25,47 @@ const DEFAULT_PAIN_AREAS = [
   "ארבע ראשי",
   "המסטרינג",
   "מקרבים",
+  "מכופפי ירך",
+  "ישבן",
   "תאומים",
+  "אכילס",
   "קרסול",
   "ברך",
   "גב תחתון",
+  "גב עליון",
   "מפשעה",
   "כתף",
+  "צוואר",
   "אחר"
+];
+const PAIN_SIDES = ["ימין", "שמאל", "דו צדדי"];
+const FOOTBALL_PAIN_REGIONS = [
+  { id: "neck-front", area: "צוואר", view: "front", shape: "rect", x: 91, y: 54, w: 18, h: 16, labelX: 100, labelY: 61 },
+  { id: "shoulder-right-front", area: "כתף", view: "front", shape: "ellipse", cx: 62, cy: 82, rx: 16, ry: 13, labelX: 52, labelY: 77 },
+  { id: "shoulder-left-front", area: "כתף", view: "front", shape: "ellipse", cx: 138, cy: 82, rx: 16, ry: 13, labelX: 148, labelY: 77 },
+  { id: "hip-flexor-front", area: "מכופפי ירך", view: "front", shape: "rect", x: 78, y: 154, w: 44, h: 24, labelX: 100, labelY: 166 },
+  { id: "groin-front", area: "מפשעה", view: "front", shape: "ellipse", cx: 100, cy: 184, rx: 22, ry: 16, labelX: 100, labelY: 189 },
+  { id: "adductors-front", area: "מקרבים", view: "front", shape: "rect", x: 82, y: 196, w: 36, h: 76, labelX: 100, labelY: 230 },
+  { id: "quad-right-front", area: "ארבע ראשי", view: "front", shape: "rect", x: 58, y: 192, w: 32, h: 78, labelX: 63, labelY: 228 },
+  { id: "quad-left-front", area: "ארבע ראשי", view: "front", shape: "rect", x: 110, y: 192, w: 32, h: 78, labelX: 137, labelY: 228 },
+  { id: "knee-right-front", area: "ברך", view: "front", shape: "ellipse", cx: 74, cy: 282, rx: 16, ry: 13, labelX: 74, labelY: 286 },
+  { id: "knee-left-front", area: "ברך", view: "front", shape: "ellipse", cx: 126, cy: 282, rx: 16, ry: 13, labelX: 126, labelY: 286 },
+  { id: "calf-right-front", area: "תאומים", view: "front", shape: "rect", x: 58, y: 298, w: 30, h: 48, labelX: 60, labelY: 322 },
+  { id: "calf-left-front", area: "תאומים", view: "front", shape: "rect", x: 112, y: 298, w: 30, h: 48, labelX: 140, labelY: 322 },
+  { id: "ankle-right-front", area: "קרסול", view: "front", shape: "ellipse", cx: 72, cy: 352, rx: 15, ry: 10, labelX: 72, labelY: 356 },
+  { id: "ankle-left-front", area: "קרסול", view: "front", shape: "ellipse", cx: 128, cy: 352, rx: 15, ry: 10, labelX: 128, labelY: 356 },
+  { id: "neck-back", area: "צוואר", view: "back", shape: "rect", x: 91, y: 54, w: 18, h: 16, labelX: 100, labelY: 61 },
+  { id: "upper-back", area: "גב עליון", view: "back", shape: "rect", x: 70, y: 84, w: 60, h: 48, labelX: 100, labelY: 108 },
+  { id: "lower-back", area: "גב תחתון", view: "back", shape: "rect", x: 76, y: 132, w: 48, h: 42, labelX: 100, labelY: 154 },
+  { id: "glute", area: "ישבן", view: "back", shape: "ellipse", cx: 100, cy: 184, rx: 34, ry: 21, labelX: 100, labelY: 190 },
+  { id: "hamstring-right", area: "המסטרינג", view: "back", shape: "rect", x: 58, y: 202, w: 32, h: 72, labelX: 62, labelY: 236 },
+  { id: "hamstring-left", area: "המסטרינג", view: "back", shape: "rect", x: 110, y: 202, w: 32, h: 72, labelX: 138, labelY: 236 },
+  { id: "knee-back-right", area: "ברך", view: "back", shape: "ellipse", cx: 74, cy: 282, rx: 16, ry: 13, labelX: 74, labelY: 286 },
+  { id: "knee-back-left", area: "ברך", view: "back", shape: "ellipse", cx: 126, cy: 282, rx: 16, ry: 13, labelX: 126, labelY: 286 },
+  { id: "calf-back-right", area: "תאומים", view: "back", shape: "rect", x: 58, y: 300, w: 30, h: 42, labelX: 60, labelY: 320 },
+  { id: "calf-back-left", area: "תאומים", view: "back", shape: "rect", x: 112, y: 300, w: 30, h: 42, labelX: 140, labelY: 320 },
+  { id: "achilles-right", area: "אכילס", view: "back", shape: "rect", x: 64, y: 342, w: 18, h: 24, labelX: 63, labelY: 354 },
+  { id: "achilles-left", area: "אכילס", view: "back", shape: "rect", x: 118, y: 342, w: 18, h: 24, labelX: 138, labelY: 354 }
 ];
 
 const DEFAULT_PLAYERS = [
@@ -78,7 +113,7 @@ const GPS_FIELDS = [
   ["accelerations", "האצות מעל 4"],
   ["decelerations", "האטות מעל 4"]
 ];
-const GPS_REQUIRED_FIELDS = ["date", "playerName", "sessionName"];
+const GPS_REQUIRED_FIELDS = ["playerName"];
 const GPS_NUMERIC_FIELDS = new Set([
   "minutesPlayed",
   "totalDistance",
@@ -96,16 +131,40 @@ const GPS_NUMERIC_FIELDS = new Set([
   "decelerations"
 ]);
 const GPS_METRICS = [
-  ["totalDistance", "מרחק כולל"],
-  ["highSpeedRunning", "ריצה במהירות גבוהה"],
-  ["distanceAbove25", "מרחק מעל 25 קמ״ש"],
-  ["maxSpeed", "מהירות מקסימלית"],
-  ["accelerations", "האצות"],
-  ["decelerations", "האטות"],
-  ["gpsLoad", "עומס GPS"],
-  ["distancePerMinute", "מרחק לדקה"],
-  ["intensity", "עצימות"]
+  ["totalDistance", "Distance"],
+  ["distancePerMinute", "Distance per minute"],
+  ["highSpeedRunning", "HSR"],
+  ["sprintDistance", "Sprint Distance"],
+  ["sprintCount", "Number of Sprints"],
+  ["maxSpeed", "Max Speed"],
+  ["accelerations", "Accelerations"],
+  ["decelerations", "Decelerations"],
+  ["gpsLoad", "GPS Load"],
+  ["metabolicActivity", "Metabolic Activity"],
+  ["hmld", "HMLD"],
+  ["workRestRatio", "Work Rest Ratio"],
+  ["intensity", "Intensity"],
+  ["minutesPlayed", "Minutes Played"],
+  ["distanceAbove18", "Distance above 18"],
+  ["distanceAbove25", "Distance above 25"]
 ];
+const GPS_METRIC_GROUPS = [
+  { title: "Volume", keys: ["totalDistance", "minutesPlayed", "distancePerMinute"] },
+  { title: "Speed", keys: ["highSpeedRunning", "maxSpeed", "distanceAbove18", "distanceAbove25"] },
+  { title: "Sprint", keys: ["sprintDistance", "sprintCount"] },
+  { title: "Load", keys: ["gpsLoad", "metabolicActivity", "hmld", "intensity", "workRestRatio"] },
+  { title: "Accel/Decel", keys: ["accelerations", "decelerations"] }
+];
+const GPS_SESSION_META_MARKER = "__GPS_SESSION_META__:";
+const GPS_ACTIVITY_TYPES = [
+  ["match", "משחק"],
+  ["training", "אימון"],
+  ["training_match", "משחק אימון"]
+];
+const GPS_COMPETITIONS = ["ליגה", "גביע המדינה", "גביע הטוטו", "ידידות / משחק אימון"];
+const GPS_HOME_AWAY_OPTIONS = ["בית", "חוץ"];
+const GPS_MATCH_DAY_RELATIONS = ["MD+1", "MD+2", "MD-4", "MD-3", "MD-2", "MD-1"];
+const GPS_TRAINING_MATCH_FORMATS = ["11v11", "10v10", "8v8", "דקות מחולקות"];
 const GPS_COLUMN_ALIASES = {
   date: ["תאריך", "date", "day", "יום"],
   playerName: ["שם שחקן", "שחקן", "שם", "player", "player name", "name"],
@@ -148,7 +207,16 @@ const uiState = {
     period: "all",
     metric: "totalDistance"
   },
+  calendar: {
+    view: "month",
+    anchorDate: todayIso(),
+    filter: "all",
+    selectedDate: todayIso(),
+    popoverDate: ""
+  },
   gpsImport: null,
+  gpsImportModalOpen: false,
+  gpsSessionSetup: createDefaultGpsSessionSetup(),
   sessionEditId: null
 };
 
@@ -160,6 +228,22 @@ let supabaseSaveTimer = null;
 let supabaseClient = null;
 let state = isSupabaseMode() ? createEmptyState() : loadState();
 logRuntimeStartup();
+
+function createDefaultGpsSessionSetup() {
+  return {
+    date: todayIso(),
+    sessionName: "GPS",
+    activityType: "match",
+    competition: "ליגה",
+    matchRound: "",
+    opponent: "",
+    homeAway: "בית",
+    result: "",
+    matchDayRelation: "MD-1",
+    format: "11v11",
+    notes: ""
+  };
+}
 
 window.addEventListener("popstate", render);
 document.addEventListener("click", (event) => {
@@ -210,6 +294,11 @@ function render() {
   }
 
   if (path === "/coach") {
+    renderCoachHome();
+    return;
+  }
+
+  if (path === "/coach/analytics") {
     renderCoachDashboard();
     return;
   }
@@ -225,7 +314,8 @@ function render() {
   }
 
   if (path.startsWith("/coach/player/")) {
-    renderPlayerProfile(path.split("/").pop() || "");
+    const playerRoute = parseCoachPlayerRoute(path);
+    renderPlayerProfile(playerRoute.playerId, playerRoute.tab);
     return;
   }
 
@@ -236,6 +326,11 @@ function render() {
 
   if (path === "/coach/gps") {
     renderGpsPage();
+    return;
+  }
+
+  if (path === "/coach/calendar") {
+    renderCalendarPage();
     return;
   }
 
@@ -261,6 +356,30 @@ function navigate(path, replace = false) {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
+function parseCoachPlayerRoute(path) {
+  const parts = normalizePath(path).split("/").filter(Boolean);
+  return {
+    playerId: parts[2] || "",
+    tab: normalizeCoachPlayerProfileTab(parts[3] || "readiness")
+  };
+}
+
+function normalizeCoachPlayerProfileTab(tab) {
+  return getCoachPlayerProfileTabs().some((item) => item.id === tab) ? tab : "readiness";
+}
+
+function getCoachPlayerProfileTabs() {
+  return [
+    { id: "readiness", label: "מוכנות" },
+    { id: "load", label: "עומסים" },
+    { id: "gps", label: "GPS" },
+    { id: "sleep", label: "שינה" },
+    { id: "pain", label: "כאבים" },
+    { id: "hydration", label: "הידרציה" },
+    { id: "notes", label: "הערות דוח" }
+  ];
+}
+
 function mount(html, bind) {
   app.innerHTML = html;
   if (typeof bind === "function") bind();
@@ -269,7 +388,6 @@ function mount(html, bind) {
 function renderLoadingScreen(message = "טוען נתונים...") {
   mount(`
     <main class="loading-screen">
-      ${renderStorageStatus()}
       <h1>${escapeHtml(APP_CONFIG.appName)}</h1>
       <p>${escapeHtml(message)}</p>
     </main>
@@ -280,7 +398,6 @@ function renderStorageError() {
   mount(`
     <main class="not-found">
       <div class="surface form-panel">
-        ${renderStorageStatus()}
         <h1>שגיאת חיבור ל-Supabase</h1>
         <p>${escapeHtml(supabaseError || "לא ניתן לטעון נתונים כרגע.")}</p>
         <button id="retrySupabase" class="btn primary" type="button">נסה שוב</button>
@@ -294,7 +411,7 @@ function renderStorageError() {
 function renderStorageStatus() {
   const status = getStorageStatus();
   return `
-    <div class="storage-status ${status.tone}" title="${escapeAttr(status.detail)}">
+    <div class="storage-status ${status.tone}" aria-label="${escapeAttr(status.detail)}">
       <span class="status-dot ${status.dot}"></span>
       <span>${escapeHtml(status.label)}</span>
     </div>
@@ -498,7 +615,8 @@ function createEmptyState() {
     reports: [],
     sessions: [],
     gpsSessions: [],
-    gpsRecords: []
+    gpsRecords: [],
+    calendarLoadPlans: loadCalendarLoadPlans()
   };
 }
 
@@ -548,13 +666,71 @@ function normalizeState(data) {
     schemaVersion: 2,
     seededAt: data.seededAt || new Date().toISOString(),
     players,
-    painAreas: Array.isArray(data.painAreas) && data.painAreas.length ? data.painAreas : [...DEFAULT_PAIN_AREAS],
+    painAreas: unique([...(Array.isArray(data.painAreas) ? data.painAreas : []), ...DEFAULT_PAIN_AREAS]),
     settings: { ...DEFAULT_SETTINGS, ...(data.settings || {}) },
-    readinessReports: Array.isArray(data.readinessReports) ? data.readinessReports : [],
+    readinessReports: Array.isArray(data.readinessReports) ? data.readinessReports.map(normalizeReadinessReport) : [],
     reports,
     sessions: Array.isArray(data.sessions) ? data.sessions : [],
     gpsSessions: Array.isArray(data.gpsSessions) ? data.gpsSessions : [],
-    gpsRecords: Array.isArray(data.gpsRecords) ? data.gpsRecords : []
+    gpsRecords: Array.isArray(data.gpsRecords) ? data.gpsRecords : [],
+    calendarLoadPlans: normalizeCalendarLoadPlans({ ...loadCalendarLoadPlans(), ...(data.calendarLoadPlans || {}) })
+  };
+}
+
+function normalizeCalendarLoadPlans(plans) {
+  return Object.fromEntries(Object.entries(plans || {})
+    .filter(([date]) => /^\d{4}-\d{2}-\d{2}$/.test(date))
+    .map(([date, plan]) => [date, {
+      gpsLoad: normalizeLoadPlanValue(plan && plan.gpsLoad),
+      rpeLoad: normalizeLoadPlanValue(plan && plan.rpeLoad)
+    }]));
+}
+
+function normalizeLoadPlanValue(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 1 && number <= 5 ? Math.round(number) : null;
+}
+
+function loadCalendarLoadPlans() {
+  try {
+    return normalizeCalendarLoadPlans(JSON.parse(localStorage.getItem(CALENDAR_LOAD_PLANS_KEY) || "{}"));
+  } catch (error) {
+    return {};
+  }
+}
+
+function persistCalendarLoadPlans() {
+  try {
+    localStorage.setItem(CALENDAR_LOAD_PLANS_KEY, JSON.stringify(state.calendarLoadPlans || {}));
+  } catch (error) {
+    console.warn("[Calendar] Failed to persist planned load scores", error);
+  }
+}
+
+function saveCalendarLoadPlan(date, gpsLoad, rpeLoad) {
+  const plan = {
+    gpsLoad: normalizeLoadPlanValue(gpsLoad),
+    rpeLoad: normalizeLoadPlanValue(rpeLoad)
+  };
+  state.calendarLoadPlans = state.calendarLoadPlans || {};
+  if (plan.gpsLoad || plan.rpeLoad) {
+    state.calendarLoadPlans[date] = plan;
+  } else {
+    delete state.calendarLoadPlans[date];
+  }
+  persistCalendarLoadPlans();
+  if (!isSupabaseMode()) saveState();
+}
+
+function normalizeReadinessReport(report) {
+  const painArea = report.painArea || NO_PAIN;
+  return {
+    ...report,
+    painArea,
+    detailedPainArea: report.detailedPainArea || (painArea !== NO_PAIN ? painArea : ""),
+    painSide: painArea === NO_PAIN ? "" : report.painSide || "דו צדדי",
+    painIntensity: painArea === NO_PAIN || report.painIntensity === undefined || report.painIntensity === "" ? null : Number(report.painIntensity),
+    comments: report.comments || ""
   };
 }
 
@@ -681,7 +857,7 @@ async function saveSupabaseState(nextState) {
     })), "team_id,name"),
     supabaseUpsert("settings", [toSupabaseSettings(nextState.settings)], "team_id"),
     supabaseUpsert("sessions", nextState.sessions.map(toSupabaseSession), "team_id,id"),
-    supabaseUpsert("readiness_reports", nextState.readinessReports.map(toSupabaseReadinessReport), "team_id,id"),
+    supabaseUpsertReadinessReports(nextState.readinessReports),
     supabaseUpsert("rpe_reports", nextState.reports.map(toSupabaseRpeReport), "team_id,id"),
     supabaseUpsert("gps_sessions", nextState.gpsSessions.map(toSupabaseGpsSession), "team_id,id"),
     supabaseUpsert("gps_records", nextState.gpsRecords.map(toSupabaseGpsRecord), "team_id,id")
@@ -719,6 +895,24 @@ async function supabaseUpsert(table, rows, onConflict) {
     },
     body: JSON.stringify(rows)
   });
+}
+
+async function supabaseUpsertReadinessReports(reports) {
+  if (!reports.length) return [];
+  try {
+    return await supabaseUpsert("readiness_reports", reports.map((report) => toSupabaseReadinessReport(report, true)), "team_id,id");
+  } catch (error) {
+    if (!isMissingReadinessPainColumnError(error)) throw error;
+    console.warn("[RPE Supabase] readiness pain columns are missing; saving detailed pain data inside comments metadata", {
+      message: error.message
+    });
+    return supabaseUpsert("readiness_reports", reports.map((report) => toSupabaseReadinessReport(report, false)), "team_id,id");
+  }
+}
+
+function isMissingReadinessPainColumnError(error) {
+  const message = String(error && error.message ? error.message : error || "");
+  return /pain_side|pain_intensity|detailed_pain_area|schema cache|column/i.test(message);
 }
 
 async function supabaseDeleteMissing(table, column, values) {
@@ -857,8 +1051,8 @@ function fromSupabaseSession(row) {
   };
 }
 
-function toSupabaseReadinessReport(report) {
-  return {
+function toSupabaseReadinessReport(report, includeDetailedPainColumns = false) {
+  const row = {
     id: report.id,
     team_id: APP_CONFIG.teamId,
     player_id: report.playerId,
@@ -874,12 +1068,20 @@ function toSupabaseReadinessReport(report) {
     load_feeling: Number(report.loadFeeling) || 0,
     body_weight: report.bodyWeight,
     medical_limitation: Boolean(report.medicalLimitation),
-    comments: report.comments || ""
+    comments: packReadinessComments(report)
   };
+  if (includeDetailedPainColumns) {
+    row.pain_side = report.painArea && report.painArea !== NO_PAIN ? report.painSide || null : null;
+    row.pain_intensity = report.painArea && report.painArea !== NO_PAIN && report.painIntensity ? Number(report.painIntensity) : null;
+    row.detailed_pain_area = report.painArea && report.painArea !== NO_PAIN ? report.detailedPainArea || report.painArea : null;
+  }
+  return row;
 }
 
 function fromSupabaseReadinessReport(row) {
-  return {
+  const unpacked = unpackReadinessComments(row.comments || "");
+  const painArea = row.pain_area || NO_PAIN;
+  return normalizeReadinessReport({
     id: row.id,
     playerId: row.player_id,
     playerName: row.player_name,
@@ -890,12 +1092,45 @@ function fromSupabaseReadinessReport(row) {
     energy: Number(row.energy) || 0,
     mood: Number(row.mood) || 0,
     soreness: Number(row.soreness) || 0,
-    painArea: row.pain_area || NO_PAIN,
+    painArea,
+    detailedPainArea: row.detailed_pain_area || unpacked.metadata.detailedPainArea || (painArea !== NO_PAIN ? painArea : ""),
+    painSide: row.pain_side || unpacked.metadata.painSide || "",
+    painIntensity: row.pain_intensity === undefined || row.pain_intensity === null ? unpacked.metadata.painIntensity ?? null : Number(row.pain_intensity),
     loadFeeling: Number(row.load_feeling) || 0,
     bodyWeight: row.body_weight === null ? null : Number(row.body_weight),
     medicalLimitation: Boolean(row.medical_limitation),
-    comments: row.comments || ""
-  };
+    comments: unpacked.comments
+  });
+}
+
+function packReadinessComments(report) {
+  const comments = stripReadinessMetadata(report.comments || "").trim();
+  const metadata = {};
+  if (report.painArea && report.painArea !== NO_PAIN) {
+    if (report.painSide) metadata.painSide = report.painSide;
+    if (report.painIntensity !== null && report.painIntensity !== undefined && report.painIntensity !== "") metadata.painIntensity = Number(report.painIntensity);
+    if (report.detailedPainArea) metadata.detailedPainArea = report.detailedPainArea;
+  }
+  if (!Object.keys(metadata).length) return comments;
+  return `${comments}${comments ? "\n\n" : ""}[RPE_READINESS_METADATA]${JSON.stringify(metadata)}[/RPE_READINESS_METADATA]`;
+}
+
+function unpackReadinessComments(comments) {
+  const text = String(comments || "");
+  const match = text.match(/\[RPE_READINESS_METADATA\]([\s\S]*?)\[\/RPE_READINESS_METADATA\]/);
+  if (!match) return { comments: text, metadata: {} };
+  try {
+    return {
+      comments: stripReadinessMetadata(text).trim(),
+      metadata: JSON.parse(match[1]) || {}
+    };
+  } catch (error) {
+    return { comments: stripReadinessMetadata(text).trim(), metadata: {} };
+  }
+}
+
+function stripReadinessMetadata(comments) {
+  return String(comments || "").replace(/\s*\[RPE_READINESS_METADATA\][\s\S]*?\[\/RPE_READINESS_METADATA\]\s*/g, "").trim();
 }
 
 function toSupabaseRpeReport(report) {
@@ -943,19 +1178,55 @@ function toSupabaseGpsSession(sessionItem) {
     session_name: sessionItem.sessionName,
     type: sessionItem.type,
     opponent: sessionItem.opponent || null,
-    notes: sessionItem.notes || ""
+    notes: encodeGpsSessionNotes(sessionItem)
   };
 }
 
 function fromSupabaseGpsSession(row) {
+  const parsedNotes = parseGpsSessionNotes(row.notes || "");
   return {
     id: row.id,
     date: row.session_date,
     sessionName: row.session_name,
     type: row.type,
     opponent: row.opponent || "",
-    notes: row.notes || ""
+    notes: parsedNotes.notes,
+    ...parsedNotes.metadata
   };
+}
+
+function getGpsSessionMetadata(sessionItem) {
+  return {
+    activityType: sessionItem.activityType || sessionItem.type || "match",
+    competition: sessionItem.competition || "",
+    matchRound: sessionItem.matchRound || "",
+    homeAway: sessionItem.homeAway || "",
+    result: sessionItem.result || "",
+    matchDayRelation: sessionItem.matchDayRelation || "",
+    format: sessionItem.format || ""
+  };
+}
+
+function encodeGpsSessionNotes(sessionItem) {
+  const notes = String(sessionItem.notes || "").trim();
+  const metadata = getGpsSessionMetadata(sessionItem);
+  const metadataText = `${GPS_SESSION_META_MARKER}${JSON.stringify(metadata)}`;
+  return notes ? `${notes}\n${metadataText}` : metadataText;
+}
+
+function parseGpsSessionNotes(notesText) {
+  const text = String(notesText || "");
+  const markerIndex = text.lastIndexOf(GPS_SESSION_META_MARKER);
+  if (markerIndex === -1) return { notes: text, metadata: {} };
+  const notes = text.slice(0, markerIndex).trim();
+  const rawMetadata = text.slice(markerIndex + GPS_SESSION_META_MARKER.length).trim();
+  try {
+    const metadata = JSON.parse(rawMetadata);
+    return { notes, metadata: metadata && typeof metadata === "object" ? metadata : {} };
+  } catch (error) {
+    console.warn("[GPS] Failed to parse session metadata", error);
+    return { notes: text, metadata: {} };
+  }
 }
 
 function toSupabaseGpsRecord(record) {
@@ -1146,7 +1417,12 @@ function createDemoGpsData(players, base) {
     date: base,
     sessionName: "משחק ליגה - מחזור 12",
     type: "match",
+    activityType: "match",
+    competition: "ליגה",
+    matchRound: "מחזור 12",
     opponent: "הפועל צפון",
+    homeAway: "בית",
+    result: "2-1",
     notes: "נתוני דמו ממערכת GPS"
   };
   const specs = [
@@ -1302,8 +1578,7 @@ function renderPlayerLogin() {
           </div>
         </div>
         <div class="hero-actions">
-          ${renderStorageStatus()}
-          <a href="/coach" data-route class="btn secondary">מאמן</a>
+          <a href="/coach" data-route class="btn secondary">אזור צוות מקצועי</a>
         </div>
       </header>
 
@@ -1311,8 +1586,13 @@ function renderPlayerLogin() {
         <div class="form-intro">
           <span class="eyebrow">שחקנים</span>
           <h2>התחברות מהירה</h2>
-          <p>בחר שם והזן PIN אישי כדי למלא רק את הדוחות שלך.</p>
+          <p>השלמת הדוח היומי מסייעת לצוות המקצועי לעקוב אחרי מוכנות, עומסים והתאוששות.</p>
         </div>
+        <ol class="login-steps" aria-label="שלבי כניסה">
+          <li><span>1</span><strong>בחר את שמך</strong></li>
+          <li><span>2</span><strong>הזן קוד אישי</strong></li>
+          <li><span>3</span><strong>לחץ כניסה</strong></li>
+        </ol>
         <div class="field">
           <label for="loginPlayerId">שם שחקן</label>
           <select id="loginPlayerId" name="playerId" required>
@@ -1353,6 +1633,7 @@ function renderPlayerHome(player) {
   const readiness = getReadinessFor(player.id, date);
   const post = getPostReportFor(player.id, date);
   const readinessComputed = readiness ? getComputedReadiness(readiness) : null;
+  const completedCount = [readiness, post].filter(Boolean).length;
   const html = `
     <main class="player-page player-app">
       <header class="player-hero player-home-hero">
@@ -1364,7 +1645,6 @@ function renderPlayerHome(player) {
           </div>
         </div>
         <div class="hero-actions">
-          ${renderStorageStatus()}
           <button id="logoutPlayer" class="btn ghost" type="button">יציאה</button>
         </div>
       </header>
@@ -1372,26 +1652,42 @@ function renderPlayerHome(player) {
       <section class="surface form-panel grid">
         <div class="form-intro">
           <span class="eyebrow">דיווח יומי</span>
-          <h2>מה צריך למלא היום?</h2>
+          <h2>הדוחות שלך להיום</h2>
           <p>שני דוחות קצרים שעוזרים לצוות להבין עומס, מוכנות והתאוששות.</p>
         </div>
-        <div class="player-status-grid">
-          ${statusCard("דוח מוכנות לפני אימון", readiness ? "בוצע" : "חסר", readiness ? "green" : "yellow", readinessComputed ? `ציון מוכנות ${readinessComputed.readinessScore}` : "לפני האימון")}
-          ${statusCard("דוח RPE אחרי אימון", post ? "בוצע" : "חסר", post ? "green" : "yellow", post ? `RPE ${post.rpe}` : "אחרי האימון")}
+        <div class="daily-progress" aria-label="התקדמות יומית">
+          <div>
+            <strong>${completedCount}/2 דוחות הושלמו היום</strong>
+            <span>${completedCount === 2 ? "כל הדיווחים להיום מוכנים." : "נשאר להשלים את הדוחות החסרים."}</span>
+          </div>
+          <div class="progress-track" aria-hidden="true">
+            <span style="width: ${completedCount * 50}%"></span>
+          </div>
         </div>
         <div class="player-home-actions">
-          <a href="/report/pre" data-route class="player-action-card primary-action">
-            <span class="action-kicker">${readiness ? "עדכון" : "לפני אימון"}</span>
-            <strong>דוח מוכנות לפני אימון</strong>
-            <small>שינה, אנרגיה, כאבים, עומס והגבלות.</small>
-          </a>
-          <a href="/report/post" data-route class="player-action-card">
-            <span class="action-kicker">${post ? "עדכון" : "אחרי אימון"}</span>
-            <strong>דוח RPE אחרי אימון</strong>
-            <small>RPE, עייפות, כאבים, השלמת אימון ומשקל.</small>
-          </a>
+          ${playerHomeActionCard({
+            href: "/report/pre",
+            title: "דוח מוכנות לפני אימון",
+            completed: Boolean(readiness),
+            explanation: readinessComputed
+              ? "דוח המוכנות להיום נקלט. אפשר לעדכן אם משהו השתנה."
+              : "שינה, אנרגיה, מצב רוח, כאבים והגבלות לפני האימון.",
+            actionText: "מלא דוח מוכנות",
+            primary: !readiness
+          })}
+          ${playerHomeActionCard({
+            href: "/report/post",
+            title: "דוח RPE אחרי אימון",
+            completed: Boolean(post),
+            explanation: post
+              ? `RPE ${post.rpe} · עייפות, כאבים ומשקל אחרי האימון.`
+              : "RPE, עייפות, כאבים, השלמת אימון ומשקל אחרי האימון.",
+            actionText: "מלא דוח RPE",
+            primary: !post && Boolean(readiness)
+          })}
         </div>
       </section>
+      ${renderPlayerPersonalArea(player)}
     </main>
   `;
 
@@ -1400,19 +1696,560 @@ function renderPlayerHome(player) {
       localStorage.removeItem(PLAYER_SESSION_KEY);
       renderReportPage();
     });
+    bindPlayerPersonalArea(player.id);
   });
 }
 
-function statusCard(title, status, color, note) {
+function playerHomeActionCard({ href, title, completed, explanation, actionText, primary }) {
+  const color = completed ? "green" : "yellow";
   return `
-    <article class="status-card ${color}">
-      <div>
-        <strong>${escapeHtml(title)}</strong>
-        <span>${escapeHtml(note)}</span>
+    <a href="${escapeAttr(href)}" data-route class="player-action-card ${primary ? "primary-action" : ""}">
+      <div class="action-card-head">
+        <span class="badge ${color}">${completed ? "בוצע" : "חסר"}</span>
+        <span class="action-kicker">${completed ? "אפשר לעדכן" : "ממתין לדיווח"}</span>
       </div>
-      <span class="badge ${color}">${escapeHtml(status)}</span>
+      <div class="action-card-copy">
+        <strong>${escapeHtml(title)}</strong>
+        <small>${escapeHtml(explanation)}</small>
+      </div>
+      <span class="action-button">${completed ? "צפייה / עדכון דוח" : escapeHtml(actionText || "מלא דוח")}</span>
+    </a>
+  `;
+}
+
+function renderPlayerPersonalArea(player) {
+  return `
+    <section class="surface form-panel player-profile-area">
+      <div class="form-intro">
+        <span class="eyebrow">האזור האישי שלי</span>
+        <h2>התאוששות, GPS ושיאים</h2>
+        <p>מבט קצר על ההתאוששות והפעילות שלך. הדוחות היומיים נשארים הדבר החשוב ביותר.</p>
+      </div>
+      <div class="player-profile-tabs" role="tablist" aria-label="אזור אישי">
+        <button class="is-active" type="button" data-player-profile-tab="recovery">התאוששות</button>
+        <button type="button" data-player-profile-tab="gps">GPS Center</button>
+        <button type="button" data-player-profile-tab="records">שיאים אישיים</button>
+      </div>
+      <div class="player-profile-panels">
+        <section data-player-profile-panel="recovery">
+          ${renderPlayerRecoverySection(player.id)}
+        </section>
+        <section data-player-profile-panel="gps" hidden>
+          ${renderPlayerGpsCenter(player.id)}
+        </section>
+        <section data-player-profile-panel="records" hidden>
+          ${renderPlayerPersonalRecords(player.id)}
+        </section>
+      </div>
+    </section>
+  `;
+}
+
+function bindPlayerPersonalArea(playerId) {
+  document.querySelectorAll("[data-player-profile-tab]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const target = button.getAttribute("data-player-profile-tab");
+      document.querySelectorAll("[data-player-profile-tab]").forEach((item) => item.classList.toggle("is-active", item === button));
+      document.querySelectorAll("[data-player-profile-panel]").forEach((panel) => {
+        panel.hidden = panel.getAttribute("data-player-profile-panel") !== target;
+      });
+    });
+  });
+  bindPlayerGpsControls(playerId);
+}
+
+function renderPlayerRecoverySection(playerId) {
+  const readinessSeries = buildPlayerReadinessSeries(playerId).slice(-12);
+  const postSeries = buildPlayerPostSeries(playerId).slice(-12);
+  const hydrationSeries = postSeries
+    .filter((report) => report.hydration)
+    .map((report) => ({ ...report, hydrationLossPercent: report.hydration.lossPercent }));
+  const latestReadiness = readinessSeries[readinessSeries.length - 1] || null;
+  const latestHydration = hydrationSeries[hydrationSeries.length - 1] || null;
+  const recovery = getPlayerRecoverySummary(latestReadiness, latestHydration);
+  const avgSleep = average(readinessSeries.map((report) => report.sleepHours));
+  const avgHydrationLoss = average(hydrationSeries.map((report) => report.hydrationLossPercent));
+  const latestPain = getLatestPlayerPainReport(playerId);
+  const hydrationStatus = latestHydration ? getPlayerHydrationStatus(latestHydration.hydrationLossPercent) : { label: "אין נתון", tone: "neutral" };
+
+  return `
+    <div class="player-section-grid">
+      <article class="player-insight-card ${recovery.tone}">
+        <span class="player-card-icon" aria-hidden="true">${escapeHtml(recovery.icon)}</span>
+        <div>
+          <h3>${escapeHtml(recovery.label)}</h3>
+          <p>${escapeHtml(recovery.insight)}</p>
+        </div>
+      </article>
+      <article class="player-mini-card">
+        <span>שעות שינה ממוצעות</span>
+        <strong>${escapeHtml(formatNumber(avgSleep))}</strong>
+      </article>
+      <article class="player-mini-card">
+        <span>מצב הידרציה</span>
+        <strong>${escapeHtml(hydrationStatus.label)}</strong>
+      </article>
+      <article class="player-mini-card">
+        <span>איבוד נוזלים ממוצע</span>
+        <strong>${avgHydrationLoss === null ? "אין נתון" : `${escapeHtml(formatNumber(avgHydrationLoss))}%`}</strong>
+      </article>
+    </div>
+    <div class="player-chart-grid">
+      ${playerChartCard("מגמת התאוששות", renderPlayerSparkline(readinessSeries, "readinessScore", "מגמת התאוששות"))}
+      ${playerChartCard("שינה", renderLineChart(readinessSeries, "sleepHours", "שעות שינה"))}
+      ${playerChartCard("מגמת הידרציה", renderLineChart(hydrationSeries, "hydrationLossPercent", "איבוד נוזלים"))}
+    </div>
+    <article class="player-latest-card">
+      <span class="eyebrow">דיווח כאב אחרון</span>
+      ${latestPain ? `
+        <h3>${escapeHtml(latestPain.painArea)}</h3>
+        <p>${escapeHtml(formatDateDisplay(latestPain.date))}${latestPain.painSide ? ` · ${escapeHtml(latestPain.painSide)}` : ""}${latestPain.painIntensity ? ` · עוצמה ${escapeHtml(formatInteger(latestPain.painIntensity))}/10` : ""}</p>
+      ` : `
+        <h3>אין דיווח כאב אחרון</h3>
+        <p>אם מופיע כאב חדש, כדאי לציין אותו בדוח היומי.</p>
+      `}
     </article>
   `;
+}
+
+function getPlayerRecoverySummary(latestReadiness, latestHydration) {
+  if (!latestReadiness) {
+    return {
+      tone: "neutral",
+      icon: "●",
+      label: "אין מספיק נתוני התאוששות",
+      insight: "מלא דוח מוכנות כדי לקבל תמונת התאוששות אישית."
+    };
+  }
+  const reasons = [];
+  if (Number(latestReadiness.sleepHours) < 6) reasons.push("השינה הייתה קצרה");
+  if (Number(latestReadiness.sleepQuality) <= 2) reasons.push("איכות השינה נמוכה");
+  if (Number(latestReadiness.energy) <= 2) reasons.push("האנרגיה נמוכה");
+  if (Number(latestReadiness.soreness) >= 4) reasons.push("יש כאבי שריר");
+  if (latestReadiness.painArea && latestReadiness.painArea !== NO_PAIN) reasons.push(`דווח כאב ב${latestReadiness.painArea}`);
+  if (latestHydration && latestHydration.hydrationLossPercent > 2) reasons.push("איבוד הנוזלים גבוה");
+  else if (latestHydration && latestHydration.hydrationLossPercent > 1) reasons.push("כדאי לשים לב להידרציה");
+
+  if (latestReadiness.readinessScore >= 80 && !reasons.length) {
+    return { tone: "green", icon: "🟢", label: "מצב התאוששות טוב", insight: "השינה, האנרגיה והתחושה הכללית נראות טובות לפי הדיווח האחרון." };
+  }
+  if (latestReadiness.readinessScore >= 60) {
+    return { tone: "yellow", icon: "🟡", label: "כדאי לשים לב להתאוששות", insight: reasons.slice(0, 2).join(", ") || "יש כמה סימנים שכדאי לעקוב אחריהם היום." };
+  }
+  return { tone: "red", icon: "🔴", label: "נדרשת תשומת לב להתאוששות", insight: reasons.slice(0, 3).join(", ") || "התחושה הכללית דורשת מעקב לפני פעילות." };
+}
+
+function getLatestPlayerPainReport(playerId) {
+  return [...state.readinessReports, ...state.reports]
+    .filter((report) => report.playerId === playerId && report.painArea && report.painArea !== NO_PAIN)
+    .sort((a, b) => b.date.localeCompare(a.date) || String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
+    .map((report) => ({
+      ...report,
+      painSide: report.painSide || "",
+      painIntensity: report.painIntensity || null
+    }))[0] || null;
+}
+
+function getPlayerHydrationStatus(lossPercent) {
+  const value = Number(lossPercent);
+  if (!Number.isFinite(value)) return { label: "אין נתון", tone: "neutral" };
+  if (value > 2) return { label: "דורש מעקב", tone: "red" };
+  if (value > 1) return { label: "לשים לב", tone: "yellow" };
+  return { label: "תקין", tone: "green" };
+}
+
+function playerChartCard(title, chart) {
+  return `
+    <div class="player-chart-card">
+      <h3>${escapeHtml(title)}</h3>
+      ${chart}
+    </div>
+  `;
+}
+
+function renderPlayerSparkline(series, key, label) {
+  if (!series.length) return `<div class="empty">אין נתונים לגרף</div>`;
+  const width = 360;
+  const height = 120;
+  const pad = 16;
+  const values = series.map((point) => Number(point[key]) || 0);
+  const max = Math.max(...values, 1);
+  const min = Math.min(...values, 0);
+  const range = max - min || 1;
+  const xFor = (index) => pad + (series.length === 1 ? (width - pad * 2) / 2 : ((width - pad * 2) * index) / (series.length - 1));
+  const yFor = (value) => pad + ((max - value) / range) * (height - pad * 2);
+  const points = series.map((point, index) => `${xFor(index).toFixed(1)},${yFor(Number(point[key]) || 0).toFixed(1)}`).join(" ");
+  return `
+    <svg class="player-sparkline" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeAttr(label)}">
+      <polyline class="chart-line" points="${points}" />
+      ${series.map((point, index) => `<circle class="chart-dot" cx="${xFor(index).toFixed(1)}" cy="${yFor(Number(point[key]) || 0).toFixed(1)}" r="3.5" />`).join("")}
+    </svg>
+  `;
+}
+
+function renderPlayerGpsCenter(playerId) {
+  const metrics = getPlayerGpsMetricDefinitions();
+  return `
+    <div class="player-gps-center">
+      <div class="player-filter-row" aria-label="סינון GPS">
+        ${[
+          ["all", "הכל"],
+          ["training", "אימונים"],
+          ["match", "משחקים"]
+        ].map(([value, label], index) => `<button class="${index === 0 ? "is-active" : ""}" type="button" data-player-gps-activity="${escapeAttr(value)}">${escapeHtml(label)}</button>`).join("")}
+      </div>
+      <div id="playerGpsPeriodFilters" class="player-filter-row period-row" aria-label="תקופת GPS">
+        ${renderPlayerGpsPeriodButtons("all")}
+      </div>
+      <div class="player-filter-row metric-row" aria-label="בחירת מדד GPS">
+        ${metrics.map((metric, index) => `<button class="${index === 0 ? "is-active" : ""}" type="button" data-player-gps-metric="${escapeAttr(metric.key)}">${escapeHtml(metric.label)}</button>`).join("")}
+      </div>
+      <div id="playerGpsDynamic">
+        ${renderPlayerGpsDynamic(playerId, "all", "latest", metrics[0].key)}
+      </div>
+    </div>
+  `;
+}
+
+function bindPlayerGpsControls(playerId) {
+  const dynamic = document.getElementById("playerGpsDynamic");
+  const periodRow = document.getElementById("playerGpsPeriodFilters");
+  if (!dynamic) return;
+  const rerender = () => {
+    const activity = document.querySelector("[data-player-gps-activity].is-active")?.getAttribute("data-player-gps-activity") || "all";
+    const period = document.querySelector("[data-player-gps-period].is-active")?.getAttribute("data-player-gps-period") || "latest";
+    const metric = document.querySelector("[data-player-gps-metric].is-active")?.getAttribute("data-player-gps-metric") || "totalDistance";
+    dynamic.innerHTML = renderPlayerGpsDynamic(playerId, activity, period, metric);
+    const recordsPanel = document.querySelector('[data-player-profile-panel="records"]');
+    if (recordsPanel) recordsPanel.innerHTML = renderPlayerPersonalRecords(playerId, activity, period);
+  };
+  const bindPeriodButtons = () => {
+    document.querySelectorAll("[data-player-gps-period]").forEach((button) => {
+      button.addEventListener("click", () => {
+        document.querySelectorAll("[data-player-gps-period]").forEach((item) => item.classList.toggle("is-active", item === button));
+        rerender();
+      });
+    });
+  };
+  document.querySelectorAll("[data-player-gps-activity]").forEach((button) => {
+    button.addEventListener("click", () => {
+      document.querySelectorAll("[data-player-gps-activity]").forEach((item) => item.classList.toggle("is-active", item === button));
+      if (periodRow) {
+        periodRow.innerHTML = renderPlayerGpsPeriodButtons(button.getAttribute("data-player-gps-activity") || "all");
+        bindPeriodButtons();
+      }
+      rerender();
+    });
+  });
+  document.querySelectorAll("[data-player-gps-metric]").forEach((button) => {
+    button.addEventListener("click", () => {
+      document.querySelectorAll("[data-player-gps-metric]").forEach((item) => item.classList.toggle("is-active", item === button));
+      rerender();
+    });
+  });
+  bindPeriodButtons();
+}
+
+function renderPlayerGpsPeriodButtons(activity) {
+  return getPlayerGpsPeriodOptions(activity)
+    .map((option, index) => `<button class="${index === 0 ? "is-active" : ""}" type="button" data-player-gps-period="${escapeAttr(option.value)}">${escapeHtml(option.label)}</button>`)
+    .join("");
+}
+
+function getPlayerGpsPeriodOptions(activity) {
+  if (activity === "training") {
+    return [
+      { value: "latest", label: "אימון אחרון" },
+      { value: "7", label: "7 ימים אחרונים" },
+      { value: "month", label: "חודש אחרון" },
+      { value: "season", label: "עונה" }
+    ];
+  }
+  if (activity === "match") {
+    return [
+      { value: "latest", label: "משחק אחרון" },
+      { value: "last5", label: "5 משחקים אחרונים" },
+      { value: "month", label: "חודש אחרון" },
+      { value: "season", label: "עונה" }
+    ];
+  }
+  return [
+    { value: "latest", label: "פעילות אחרונה" },
+    { value: "7", label: "7 ימים אחרונים" },
+    { value: "month", label: "חודש אחרון" },
+    { value: "season", label: "עונה" }
+  ];
+}
+
+function renderPlayerGpsDynamic(playerId, activity, period, metricKey) {
+  const records = getPlayerGpsRecordsForProfile(playerId, activity, period);
+  const metrics = getPlayerGpsMetricDefinitions();
+  const selectedMetric = metrics.find((metric) => metric.key === metricKey) || metrics[0];
+  const latest = records[0] || null;
+  const lastTitle = getPlayerGpsLastSessionTitle(activity);
+  const chartSeries = [...records].reverse();
+  return `
+    ${latest ? renderPlayerGpsLastSession(latest, lastTitle) : `<div class="surface empty">אין נתוני GPS להצגה</div>`}
+    <div class="player-kpi-grid">
+      ${renderPlayerGpsMetricCards(playerId, activity, records, metrics)}
+    </div>
+    <div class="player-chart-card">
+      <h3>${escapeHtml(selectedMetric.label)}</h3>
+      ${renderLineChart(chartSeries, selectedMetric.key, selectedMetric.label)}
+      <p class="player-trend-text">${escapeHtml(getPlayerGpsTrendInsight(records, selectedMetric))}</p>
+    </div>
+  `;
+}
+
+function getPlayerGpsLastSessionTitle(activity) {
+  if (activity === "match") return "משחק אחרון";
+  if (activity === "training") return "אימון אחרון";
+  return "פעילות אחרונה";
+}
+
+function renderPlayerGpsLastSession(record, title) {
+  return `
+    <article class="player-last-session">
+      <div>
+        <span class="eyebrow">${escapeHtml(title)}</span>
+        <h3>${escapeHtml(record.sessionName || "פעילות GPS")}</h3>
+        <p>${escapeHtml(formatDateDisplay(record.date))}${record.position ? ` · ${escapeHtml(record.position)}` : ""}</p>
+      </div>
+      <div class="player-last-session-grid">
+        ${playerGpsValue("מרחק", formatNumber(record.totalDistance), "מ׳")}
+        ${playerGpsValue("HSR", formatNumber(record.highSpeedRunning), "מ׳")}
+        ${playerGpsValue("מרחק ספרינט", formatNumber(record.sprintDistance), "מ׳")}
+        ${playerGpsValue("מספר ספרינטים", formatInteger(record.sprintCount), "")}
+        ${playerGpsValue("מהירות מרבית", formatNumber(record.maxSpeed), "קמ״ש")}
+      </div>
+    </article>
+  `;
+}
+
+function playerGpsValue(label, value, unit) {
+  return `
+    <div>
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}${unit ? ` ${escapeHtml(unit)}` : ""}</strong>
+    </div>
+  `;
+}
+
+function playerMetricCard(label, value, unit) {
+  return `
+    <article class="player-mini-card">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}${unit ? ` ${escapeHtml(unit)}` : ""}</strong>
+    </article>
+  `;
+}
+
+function renderPlayerGpsMetricCards(playerId, activity, records, metrics) {
+  if (activity === "match") {
+    const seasonGameRecords = getPlayerGpsRecordsForProfile(playerId, "match", "season");
+    const current = records[0] || null;
+    return metrics.map((metric) => renderPlayerGameMetricCard(metric, current, seasonGameRecords)).join("");
+  }
+  return metrics
+    .map((metric) => playerMetricCard(metric.label, formatGpsMetricValue(metric, getPlayerGpsKpiValue(records, metric)), metric.unit))
+    .join("");
+}
+
+function renderPlayerGameMetricCard(metric, current, seasonGameRecords) {
+  const currentValue = current ? current[metric.key] : null;
+  const seasonAverage = average(seasonGameRecords.map((record) => record[metric.key]));
+  const personalBest = Math.max(0, ...seasonGameRecords.map((record) => Number(record[metric.key]) || 0));
+  const percentOfBest = currentValue && personalBest ? Math.round((Number(currentValue) / personalBest) * 100) : null;
+  return `
+    <article class="game-metric-card">
+      <span>${escapeHtml(metric.label)}</span>
+      <strong>${escapeHtml(formatGpsMetricDisplay(metric, currentValue))}</strong>
+      <div class="game-metric-detail">
+        <small>ממוצע עונה:</small>
+        <b>${escapeHtml(formatGpsMetricDisplay(metric, seasonAverage))}</b>
+      </div>
+      <p>${percentOfBest === null ? "אין מספיק נתונים לשיא אישי" : `${escapeHtml(formatInteger(percentOfBest))}% מהשיא האישי`}</p>
+    </article>
+  `;
+}
+
+function getPlayerGpsMetricDefinitions() {
+  return [
+    { key: "totalDistance", label: "מרחק", trendLabel: "המרחק", unit: "מ׳" },
+    { key: "highSpeedRunning", label: "HSR", trendLabel: "ה-HSR", unit: "מ׳" },
+    { key: "sprintDistance", label: "מרחק ספרינט", trendLabel: "מרחק הספרינט", unit: "מ׳" },
+    { key: "sprintCount", label: "מספר ספרינטים", trendLabel: "מספר הספרינטים", unit: "" },
+    { key: "maxSpeed", label: "מהירות מרבית", trendLabel: "המהירות המרבית", unit: "קמ״ש" }
+  ];
+}
+
+function getPlayerGpsRecordsForProfile(playerId, activity = "all", period = "season") {
+  const today = todayIso();
+  const allRecords = state.gpsRecords
+    .filter((record) => record.playerId === playerId)
+    .map((record) => enrichPlayerGpsRecord(getComputedGpsRecord(record)))
+    .filter((record) => record.date);
+  const fullSessionIds = new Set(allRecords.filter((record) => normalizeGpsPeriod(record.period) === "משחק מלא").map((record) => record.gpsSessionId));
+  const activityRecords = allRecords
+    .filter((record) => !fullSessionIds.has(record.gpsSessionId) || normalizeGpsPeriod(record.period) === "משחק מלא")
+    .filter((record) => {
+      if (activity === "training") return record.sessionType === "training";
+      if (activity === "match") return record.sessionType === "match" || record.sessionType === "training_match";
+      return true;
+    })
+    .sort((a, b) => b.date.localeCompare(a.date));
+  if (period === "latest") return activityRecords.slice(0, 1);
+  if (period === "last5") return activityRecords.slice(0, 5);
+  if (period === "7") return activityRecords.filter((record) => record.date >= addDays(today, -7));
+  if (period === "month") return activityRecords.filter((record) => record.date >= addDays(today, -30));
+  return activityRecords;
+}
+
+function enrichPlayerGpsRecord(record) {
+  return {
+    ...record,
+    sprintDistance: Number(record.distanceAbove25) || 0,
+    sprintCount: getGpsSprintCount(record)
+  };
+}
+
+function getGpsSprintCount(record) {
+  if (record.sprintCount !== undefined) return Number(record.sprintCount) || 0;
+  if (record.sprints !== undefined) return Number(record.sprints) || 0;
+  const sprintDistance = Number(record.distanceAbove25) || 0;
+  return sprintDistance > 0 ? Math.max(1, Math.round(sprintDistance / 25)) : 0;
+}
+
+function formatGpsMetricValue(metric, value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return "אין נתון";
+  return metric.key === "sprintCount" ? formatInteger(value) : formatNumber(value);
+}
+
+function formatGpsMetricDisplay(metric, value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return "אין נתון";
+  const numeric = Number(value);
+  if (metric.key === "totalDistance") return `${formatNumber(numeric / 1000)} ק״מ`;
+  if (metric.key === "sprintCount") return formatInteger(numeric);
+  if (metric.key === "maxSpeed") return `${formatNumber(numeric)} קמ״ש`;
+  return `${formatNumber(numeric)} מ׳`;
+}
+
+function getPlayerGpsKpiValue(records, metric) {
+  if (!records.length) return null;
+  const values = records.map((record) => Number(record[metric.key])).filter((value) => Number.isFinite(value));
+  if (!values.length) return null;
+  if (records.length === 1) return values[0];
+  if (metric.key === "maxSpeed") return Math.max(...values);
+  return average(values);
+}
+
+function getPlayerGpsTrendInsight(records, metric) {
+  if (records.length < 4) return "אין מספיק נתונים להצגת מגמה";
+  const ordered = [...records].reverse();
+  const half = Math.floor(ordered.length / 2);
+  const previous = ordered.slice(0, half);
+  const recent = ordered.slice(half);
+  const previousAvg = average(previous.map((record) => record[metric.key]));
+  const recentAvg = average(recent.map((record) => record[metric.key]));
+  if (!previousAvg || recentAvg === null) return "אין מספיק נתונים להצגת מגמה";
+  const change = calculateChangePercent(recentAvg, previousAvg);
+  const label = metric.trendLabel || metric.label;
+  if (change === null || Math.abs(change) < 5) return `${label} שלך יציב בתקופה האחרונה`;
+  if (change > 0) return `${label} שלך במגמת שיפור בתקופה האחרונה`;
+  return `${label} שלך ירד ביחס לתקופה הקודמת`;
+}
+
+function renderPlayerPersonalRecords(playerId, activity = "all", period = "latest") {
+  const records = getPlayerGpsRecordsForProfile(playerId, activity, period);
+  const metrics = getPlayerGpsMetricDefinitions();
+  return `
+    <div class="personal-record-grid">
+      ${metrics.map((metric) => renderPlayerRecordCard(metric, getPlayerPersonalBest(records, metric))).join("")}
+    </div>
+  `;
+}
+
+function getPlayerPersonalBest(records, metric) {
+  return records
+    .filter((record) => Number(record[metric.key]) > 0)
+    .sort((a, b) => Number(b[metric.key]) - Number(a[metric.key]))[0] || null;
+}
+
+function renderPlayerRecordCard(metric, record) {
+  return `
+    <article class="record-card">
+      <span>${escapeHtml(metric.label)}</span>
+      <strong>${record ? `${escapeHtml(formatGpsMetricValue(metric, record[metric.key]))}${metric.unit ? ` ${escapeHtml(metric.unit)}` : ""}` : "אין נתון"}</strong>
+      <p>${record ? `${escapeHtml(formatDateDisplay(record.date))} · ${escapeHtml(record.sessionName || "GPS")}` : "עוד אין מספיק נתוני GPS"}</p>
+    </article>
+  `;
+}
+
+function renderReadinessLivePanel() {
+  return `
+    <section class="readiness-progress-panel" aria-live="polite">
+      <div>
+        <strong id="readinessProgressText">דוח הושלם 0%</strong>
+        <span>התקדמות מילוי הטופס</span>
+      </div>
+      <div class="progress-track" aria-hidden="true">
+        <span id="readinessProgressBar" style="width: 0%"></span>
+      </div>
+    </section>
+  `;
+}
+
+function bindReadinessLiveFeedback() {
+  const form = document.getElementById("readinessForm");
+  if (!form) return;
+  const update = () => {
+    const snapshot = getReadinessFormSnapshot(form);
+    const progress = calculateReadinessFormProgress(snapshot);
+    const progressText = document.getElementById("readinessProgressText");
+    const progressBar = document.getElementById("readinessProgressBar");
+    if (progressText) progressText.textContent = `דוח הושלם ${progress}%`;
+    if (progressBar) progressBar.style.width = `${progress}%`;
+    updatePainSummary();
+  };
+  form.addEventListener("input", update);
+  form.addEventListener("change", update);
+  update();
+}
+
+function getReadinessFormSnapshot(form) {
+  const data = new FormData(form);
+  const painArea = String(data.get("painArea") || NO_PAIN);
+  return {
+    sleepHours: optionalNumberFromForm(data, "sleepHours"),
+    sleepQuality: optionalNumberFromForm(data, "sleepQuality"),
+    energy: optionalNumberFromForm(data, "energy"),
+    mood: optionalNumberFromForm(data, "mood"),
+    soreness: optionalNumberFromForm(data, "soreness"),
+    loadFeeling: optionalNumberFromForm(data, "loadFeeling"),
+    painArea,
+    painSide: painArea === NO_PAIN ? "" : String(data.get("painSide") || ""),
+    painIntensity: painArea === NO_PAIN ? null : optionalNumberFromForm(data, "painIntensity"),
+    medicalLimitation: String(data.get("medicalLimitation")) === "true"
+  };
+}
+
+function calculateReadinessFormProgress(snapshot) {
+  const checks = [
+    snapshot.sleepHours !== null,
+    snapshot.sleepQuality !== null,
+    snapshot.energy !== null,
+    snapshot.mood !== null,
+    snapshot.soreness !== null,
+    snapshot.loadFeeling !== null,
+    Boolean(snapshot.painArea),
+    snapshot.medicalLimitation !== null && snapshot.medicalLimitation !== undefined
+  ];
+  if (snapshot.painArea && snapshot.painArea !== NO_PAIN) {
+    checks.push(Boolean(snapshot.painSide));
+    checks.push(snapshot.painIntensity !== null);
+  }
+  const done = checks.filter(Boolean).length;
+  return Math.round((done / checks.length) * 100);
 }
 
 function renderReadinessForm(player) {
@@ -1420,6 +2257,7 @@ function renderReadinessForm(player) {
   const html = playerFormShell(player, "דוח מוכנות לפני אימון", `
     <form id="readinessForm" class="surface form-panel grid" autocomplete="off">
       ${readonlyPlayerAndDate(player)}
+      ${renderReadinessLivePanel(existing)}
       <div class="grid two">
         <div class="field">
           <label for="sleepHours">שעות שינה</label>
@@ -1456,7 +2294,12 @@ function renderReadinessForm(player) {
           <small>כמה הגוף מרגיש עמוס לפני האימון.</small>
         </div>
       </div>
-      ${painField(existing ? existing.painArea : NO_PAIN)}
+      ${painField(existing ? existing.painArea : NO_PAIN, {
+        detailed: true,
+        painSide: existing ? existing.painSide : "",
+        painIntensity: existing ? existing.painIntensity : null,
+        detailedPainArea: existing ? existing.detailedPainArea : ""
+      })}
       <div class="grid two">
         <div class="field">
           <label for="bodyWeight">משקל גוף לפני אימון</label>
@@ -1484,10 +2327,17 @@ function renderReadinessForm(player) {
   mount(html, () => {
     bindScaleButtons();
     bindBodyMap();
+    bindReadinessLiveFeedback();
     document.getElementById("readinessForm").addEventListener("submit", (event) => {
       event.preventDefault();
       const data = new FormData(event.currentTarget);
       const date = todayIso();
+      const painArea = String(data.get("painArea") || NO_PAIN);
+      const painIntensity = painArea === NO_PAIN ? null : optionalNumberFromForm(data, "painIntensity");
+      if (painArea !== NO_PAIN && (!painIntensity || painIntensity < 1 || painIntensity > 10)) {
+        showPainValidation("בחר עוצמת כאב בין 1 ל-10.");
+        return;
+      }
       const report = {
         id: existing ? existing.id : createId("pre"),
         playerId: player.id,
@@ -1499,7 +2349,10 @@ function renderReadinessForm(player) {
         energy: numberFromForm(data, "energy"),
         mood: numberFromForm(data, "mood"),
         soreness: numberFromForm(data, "soreness"),
-        painArea: String(data.get("painArea") || NO_PAIN),
+        painArea,
+        detailedPainArea: painArea === NO_PAIN ? "" : String(data.get("detailedPainArea") || painArea),
+        painSide: painArea === NO_PAIN ? "" : String(data.get("painSide") || "דו צדדי"),
+        painIntensity,
         loadFeeling: numberFromForm(data, "loadFeeling"),
         bodyWeight: optionalNumberFromForm(data, "bodyWeight"),
         medicalLimitation: String(data.get("medicalLimitation")) === "true",
@@ -1606,7 +2459,6 @@ function playerFormShell(player, title, content) {
           </div>
         </div>
         <div class="hero-actions">
-          ${renderStorageStatus()}
           <a href="/report" data-route class="btn secondary">בית</a>
         </div>
       </header>
@@ -1619,7 +2471,6 @@ function renderPlayerSuccess(player, title, detail) {
   const html = `
     <main class="player-page player-app">
       <section class="surface success-state">
-        ${renderStorageStatus()}
         <span class="success-mark" aria-hidden="true">✓</span>
         <span class="eyebrow">הדוח נקלט</span>
         <h1>${escapeHtml(title)}</h1>
@@ -1646,18 +2497,379 @@ function readonlyPlayerAndDate(player) {
   `;
 }
 
-function painField(selected) {
-  return `
-    <div class="field">
-      <span class="field-label">אזור כאב</span>
-      <small>אם אין כאב, השאר "אין כאב". אם יש, בחר את האזור המרכזי.</small>
-      <div class="body-map-wrap">
-        ${renderBodyMap(selected)}
+function painField(selected, options = {}) {
+  const selectedArea = selected || NO_PAIN;
+  const detailed = Boolean(options.detailed);
+  const painOptions = unique([NO_PAIN, ...FOOTBALL_PAIN_REGIONS.map((region) => region.area), ...state.painAreas].filter(Boolean));
+  if (!detailed) {
+    return `
+      <div class="field">
+        <span class="field-label">אזור כאב</span>
+        <small>אם אין כאב, השאר "אין כאב". אם יש, בחר את האזור המרכזי.</small>
         <select id="painArea" name="painArea" required>
-          ${renderSimpleOptions(state.painAreas, selected)}
+          ${renderSimpleOptions(painOptions, selectedArea)}
         </select>
       </div>
-    </div>
+    `;
+  }
+  const hasPain = selectedArea !== NO_PAIN;
+  const selectedSide = options.painSide || (hasPain ? "דו צדדי" : "");
+  const selectedIntensity = hasPain ? options.painIntensity || "" : "";
+  const detailedPainArea = options.detailedPainArea || (hasPain ? selectedArea : "");
+  return `
+    <section class="field pain-field">
+      <div class="field-heading">
+        <span class="field-label">דיווח כאב / רגישות</span>
+        <small>בחר "אין כאב" או סמן אזור מדויק במפת הגוף.</small>
+      </div>
+      <select id="painArea" name="painArea" required>
+        ${renderSimpleOptions(painOptions, selectedArea)}
+      </select>
+      <input type="hidden" id="detailedPainArea" name="detailedPainArea" value="${escapeAttr(detailedPainArea)}" />
+      <div id="painDetailsPanel" class="pain-details-panel ${hasPain ? "" : "is-hidden"}">
+        ${renderBodyMap(selectedArea)}
+        <div class="grid two pain-controls-grid">
+          <div class="field">
+            <label for="painSide">צד</label>
+            <select id="painSide" name="painSide" ${hasPain ? "" : "disabled"}>
+              <option value="">בחירה</option>
+              ${PAIN_SIDES.map((side) => `<option value="${escapeAttr(side)}" ${side === selectedSide ? "selected" : ""}>${escapeHtml(side)}</option>`).join("")}
+            </select>
+          </div>
+          <div class="field">
+            <span class="field-label">עוצמת כאב</span>
+            ${renderScaleControl("painIntensity", 1, 10, selectedIntensity)}
+            <small>1 = כאב קל מאוד, 10 = כאב חזק מאוד</small>
+          </div>
+        </div>
+        <div class="pain-summary" aria-live="polite">
+          <span>אזור נבחר: <strong id="painSelectedArea">${escapeHtml(hasPain ? selectedArea : "אין כאב")}</strong></span>
+          <span>צד: <strong id="painSelectedSide">${escapeHtml(selectedSide || "לא נבחר")}</strong></span>
+          <span>עוצמה: <strong id="painSelectedIntensity">${escapeHtml(selectedIntensity ? `${selectedIntensity}/10` : "לא נבחר")}</strong></span>
+        </div>
+        <div id="painValidation" class="inline-error" role="alert"></div>
+      </div>
+    </section>
+  `;
+}
+
+function renderCoachHome() {
+  const context = buildCoachHomeContext();
+  const overall = getCoachHomeOverallStatus(context);
+  const actions = buildCoachHomeActionItems(context).slice(0, 5);
+  const squad = buildCoachHomeSquadStatus(context);
+  const latestGps = getCoachHomeLatestGpsActivity();
+  const pain = buildCoachHomePainSummary(context);
+  const hydration = buildCoachHomeHydrationSummary(context);
+  const upcoming = getCoachHomeUpcomingItems();
+
+  const html = coachShell("home", `
+    <section class="coach-home-hero">
+      <div class="coach-home-hero-main">
+        <span class="eyebrow">Staff Briefing</span>
+        <h2>תדרוך יומי</h2>
+        <p>${escapeHtml(formatDateDisplay(context.selectedDate))} · ${escapeHtml(APP_CONFIG.teamName)}</p>
+        <div class="coach-home-status ${overall.tone}">
+          <strong>${escapeHtml(overall.icon)} ${escapeHtml(overall.label)}</strong>
+          <span>${escapeHtml(overall.reason)}</span>
+        </div>
+      </div>
+      <div class="coach-home-brief-lines">
+        ${buildCoachHomeBriefLines(context).map((line) => `<p>${escapeHtml(line)}</p>`).join("")}
+        <a href="/coach/analytics" data-route class="btn primary">מעבר לניתוחים מלאים</a>
+      </div>
+    </section>
+
+    <section class="section coach-home-actions">
+      <div class="section-title">
+        <h3>פעולות מומלצות ${coachInfoTip("פעולות קצרות לפי הדוחות, GPS וההתראות של היום. מוצגות עד 5 פעולות בלבד.")}</h3>
+        <span>${actions.length} פעולות</span>
+      </div>
+      <div class="coach-action-grid">
+        ${actions.map(renderCoachHomeActionItem).join("")}
+      </div>
+    </section>
+
+    <section class="coach-home-grid">
+      ${renderCoachHomeSquadCard(squad)}
+      ${renderCoachHomeReportsCard(context)}
+      ${renderCoachHomeGpsCard(latestGps)}
+      ${renderCoachHomePainCard(pain)}
+      ${renderCoachHomeHydrationCard(hydration)}
+      ${renderCoachHomeCalendarCard(upcoming)}
+    </section>
+  `);
+
+  mount(html, bindCoachHomeTooltips);
+}
+
+function coachTooltipAttrs(text) {
+  return `data-coach-tooltip="${escapeAttr(text)}" tabindex="0"`;
+}
+
+function coachInfoTip(text) {
+  return `<span class="coach-info-tip" role="button" tabindex="0" aria-label="מידע" data-coach-tooltip="${escapeAttr(text)}">i</span>`;
+}
+
+function bindCoachHomeTooltips() {
+  const closeTooltips = () => {
+    document.querySelectorAll(".tooltip-open").forEach((element) => element.classList.remove("tooltip-open"));
+  };
+  document.addEventListener("click", closeTooltips, { once: true });
+  document.querySelectorAll("[data-coach-tooltip]").forEach((element) => {
+    element.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const isOpen = element.classList.contains("tooltip-open");
+      closeTooltips();
+      if (!isOpen) element.classList.add("tooltip-open");
+      document.addEventListener("click", closeTooltips, { once: true });
+    });
+    element.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") closeTooltips();
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        element.click();
+      }
+    });
+  });
+}
+
+function buildCoachHomeContext() {
+  const selectedDate = todayIso();
+  const activePlayers = getActivePlayers();
+  const readinessToday = state.readinessReports.filter((report) => report.date === selectedDate).map(getComputedReadiness);
+  const postToday = state.reports.filter((report) => report.date === selectedDate).map(getComputedReport);
+  const readinessIds = new Set(readinessToday.map((report) => report.playerId));
+  const postIds = new Set(postToday.map((report) => report.playerId));
+  const missingPre = activePlayers.filter((player) => !readinessIds.has(player.id));
+  const missingPost = activePlayers.filter((player) => !postIds.has(player.id));
+  const weekRows = buildWeeklyRows({
+    playerId: "all",
+    date: selectedDate,
+    weekDate: selectedDate,
+    sessionType: "all",
+    painArea: "all",
+    riskLevel: "all"
+  });
+  const status = buildCoachDailyStatus(activePlayers, readinessToday, postToday, missingPre, missingPost, weekRows, selectedDate);
+  return { selectedDate, activePlayers, readinessToday, postToday, missingPre, missingPost, weekRows, status };
+}
+
+function getCoachHomeOverallStatus(context) {
+  const severeCount = context.status.riskPlayers.filter((row) => row.severity > 1).length;
+  const redHydration = context.status.hydrationAlerts.some((item) => item.report.hydration && item.report.hydration.tone === "red");
+  if (severeCount || redHydration || context.status.gpsLoadAlerts.length >= 2) {
+    return { tone: "red", icon: "🔴", label: "דורש בדיקה", reason: `${Math.max(severeCount, context.status.riskPlayers.length)} שחקנים דורשים תשומת לב מיידית.` };
+  }
+  if (context.status.riskPlayers.length || context.status.missingItems.length || context.status.painAlerts.length || context.status.hydrationAlerts.length || context.status.gpsLoadAlerts.length) {
+    return { tone: "yellow", icon: "🟡", label: "דורש מעקב", reason: `${context.status.riskPlayers.length + context.status.missingItems.length} נושאים דורשים מעקב היום.` };
+  }
+  return { tone: "green", icon: "🟢", label: "מצב תקין", reason: "אין חריגות מרכזיות לתדרוך היומי." };
+}
+
+function buildCoachHomeBriefLines(context) {
+  const lines = [];
+  if (context.status.riskPlayers.length) lines.push(`${context.status.riskPlayers.length} שחקנים דורשים תשומת לב לפני האימון.`);
+  if (context.missingPre.length) lines.push(`${context.missingPre.length} דוחות מוכנות חסרים.`);
+  if (context.missingPost.length) lines.push(`${context.missingPost.length} דוחות RPE חסרים.`);
+  if (context.status.gpsLoadAlerts.length) lines.push(`פעילות GPS אחרונה מצביעה על חריגות עומס אצל ${context.status.gpsLoadAlerts.length} שחקנים.`);
+  if (context.status.painAlerts.length) lines.push(`${context.status.painAlerts.length} דיווחי כאב דורשים מעקב.`);
+  if (!lines.length) lines.push("הקבוצה במצב יציב. מומלץ להמשיך מעקב שגרתי.");
+  return lines.slice(0, 4);
+}
+
+function buildCoachHomeActionItems(context) {
+  const actions = [];
+  const topRisk = context.status.riskPlayers[0];
+  if (topRisk) {
+    actions.push({ icon: "⚠", title: `לבדוק את ${topRisk.player.name} לפני האימון`, reason: topRisk.mainReason, href: `/coach/player/${topRisk.player.id}` });
+  }
+  if (context.missingPre.length) {
+    actions.push({ icon: "▤", title: `להזכיר ל־${context.missingPre.length} שחקנים למלא דוח מוכנות`, reason: context.missingPre.slice(0, 4).map((player) => player.name).join(", "), href: "/coach/reports" });
+  }
+  if (context.status.gpsLoadAlerts.length) {
+    actions.push({ icon: "📡", title: "לעבור על חריגות GPS מהפעילות האחרונה", reason: `${context.status.gpsLoadAlerts.length} התראות GPS / עומס`, href: "/coach/gps" });
+  }
+  if (context.status.painAlerts.length) {
+    const first = context.status.painAlerts[0];
+    actions.push({ icon: "✚", title: "לבדוק שחקנים עם דיווחי כאב", reason: first ? `${first.player ? first.player.name : "שחקן"} - ${first.reason}` : "דיווח כאב", href: first && first.player ? `/coach/player/${first.player.id}/pain` : "/coach/analytics" });
+  }
+  if (context.status.hydrationAlerts.length) {
+    const first = context.status.hydrationAlerts[0];
+    actions.push({ icon: "💧", title: "לבדוק הידרציה אצל שחקנים עם איבוד נוזלים גבוה", reason: first ? `${first.player ? first.player.name : "שחקן"} - ${first.reason}` : "איבוד נוזלים", href: first && first.player ? `/coach/player/${first.player.id}/hydration` : "/coach/analytics" });
+  }
+  if (context.missingPost.length && actions.length < 5) {
+    actions.push({ icon: "RPE", title: "להשלים דוחות RPE חסרים", reason: `${context.missingPost.length} שחקנים עדיין לא מילאו דוח אחרי פעילות`, href: "/coach/reports" });
+  }
+  if (!actions.length) {
+    actions.push({ icon: "✓", title: "להמשיך מעקב שגרתי", reason: "אין פעולה דחופה בתדרוך היומי.", href: "/coach/calendar" });
+  }
+  return actions;
+}
+
+function renderCoachHomeActionItem(item) {
+  return `
+    <a href="${escapeAttr(item.href)}" data-route class="coach-action-card">
+      <span>${escapeHtml(item.icon)}</span>
+      <div>
+        <strong>${escapeHtml(item.title)} ${coachInfoTip("המלצה אוטומטית לפי הנתונים שנאספו היום. לחיצה על הכרטיס תפתח את המסך הרלוונטי.")}</strong>
+        <p>${escapeHtml(item.reason)}</p>
+      </div>
+    </a>
+  `;
+}
+
+function buildCoachHomeSquadStatus(context) {
+  const redIds = new Set(context.status.riskPlayers.filter((row) => row.severity > 1).map((row) => row.player.id));
+  const yellowIds = new Set(context.status.riskPlayers.filter((row) => row.severity <= 1 && !redIds.has(row.player.id)).map((row) => row.player.id));
+  return {
+    normal: Math.max(0, context.activePlayers.length - redIds.size - yellowIds.size),
+    watch: yellowIds.size,
+    check: redIds.size
+  };
+}
+
+function renderCoachHomeSquadCard(squad) {
+  return `
+    <article class="surface coach-home-card squad-card">
+      <div class="coach-home-card-title"><span>●</span><h3>מצב סגל ${coachInfoTip("חלוקה מהירה של הסגל לפי מצב יומי: תקין, במעקב או לבדיקה לפי דוחות והתראות.")}</h3></div>
+      <div class="squad-status-grid">
+        <div class="green" ${coachTooltipAttrs("שחקנים ללא חריגה מרכזית בדוחות היום.")}><strong>${squad.normal}</strong><span>תקינים</span></div>
+        <div class="yellow" ${coachTooltipAttrs("שחקנים עם סימן שמצריך מעקב, אך לא בהכרח בדיקה מיידית.")}><strong>${squad.watch}</strong><span>במעקב</span></div>
+        <div class="red" ${coachTooltipAttrs("שחקנים עם סימן משמעותי שמומלץ לבדוק לפני הפעילות.")}><strong>${squad.check}</strong><span>לבדיקה</span></div>
+      </div>
+    </article>
+  `;
+}
+
+function renderCoachHomeReportsCard(context) {
+  const total = context.activePlayers.length;
+  return `
+    <article class="surface coach-home-card">
+      <div class="coach-home-card-title"><span>▤</span><h3>דוחות היום ${coachInfoTip("מעקב מהיר אחרי השלמת דוח מוכנות לפני אימון ודוח RPE אחרי אימון עבור שחקני הסגל הפעילים.")}</h3></div>
+      <div class="brief-stat-list">
+        <p ${coachTooltipAttrs("כמה שחקנים הגישו דוח מוכנות היום מתוך כלל השחקנים הפעילים.")}><span>דוח מוכנות</span><strong>${context.readinessToday.length} מתוך ${total} הוגשו</strong></p>
+        <p ${coachTooltipAttrs("כמה שחקנים פעילים עדיין לא הגישו דוח מוכנות להיום.")}><span>חסר דוח מוכנות</span><strong>${context.missingPre.length} חסרים</strong></p>
+        <p ${coachTooltipAttrs("כמה שחקנים הגישו דוח RPE אחרי פעילות היום מתוך כלל השחקנים הפעילים.")}><span>דוח RPE</span><strong>${context.postToday.length} מתוך ${total} הוגשו</strong></p>
+        <p ${coachTooltipAttrs("כמה שחקנים פעילים עדיין לא הגישו דוח RPE להיום.")}><span>חסר דוח RPE</span><strong>${context.missingPost.length} חסרים</strong></p>
+      </div>
+    </article>
+  `;
+}
+
+function getCoachHomeLatestGpsActivity() {
+  const sessionItem = [...state.gpsSessions].sort((a, b) => b.date.localeCompare(a.date))[0] || null;
+  if (!sessionItem) return null;
+  const records = state.gpsRecords.filter((record) => record.gpsSessionId === sessionItem.id).map(getComputedGpsRecord);
+  const preferredRecords = getFullPeriodPreferred(records);
+  return {
+    session: sessionItem,
+    playerCount: unique(preferredRecords.map((record) => record.playerId || record.playerName).filter(Boolean)).length,
+    alertCount: preferredRecords.filter((record) => record.riskFlags.length).length
+  };
+}
+
+function renderCoachHomeGpsCard(latestGps) {
+  if (!latestGps) {
+    return `
+      <article class="surface coach-home-card">
+        <div class="coach-home-card-title"><span>📡</span><h3>פעילות GPS אחרונה ${coachInfoTip("הפעילות האחרונה שבה קיימים נתוני GPS במערכת.")}</h3></div>
+        <p class="muted-text">אין נתוני GPS להצגה</p>
+        <a href="/coach/gps" data-route class="text-link">פתיחת GPS</a>
+      </article>
+    `;
+  }
+  const sessionItem = latestGps.session;
+  return `
+    <article class="surface coach-home-card">
+      <div class="coach-home-card-title"><span>📡</span><h3>פעילות GPS אחרונה ${coachInfoTip("סיכום קצר של סשן ה-GPS האחרון: סוג פעילות, מספר שחקנים וכמה התראות נוצרו.")}</h3></div>
+      <div class="brief-stat-list">
+        <p ${coachTooltipAttrs("שם הפעילות האחרונה שיובאה למודול GPS.")}><span>סשן</span><strong>${escapeHtml(sessionItem.sessionName)}</strong></p>
+        <p ${coachTooltipAttrs("תאריך הפעילות האחרונה עם נתוני GPS.")}><span>תאריך</span><strong>${escapeHtml(formatDateDisplay(sessionItem.date))}</strong></p>
+        <p ${coachTooltipAttrs("סוג הפעילות כפי שהוגדר בעת ייבוא GPS.")}><span>סוג</span><strong>${escapeHtml(formatGpsSessionType(sessionItem.activityType || sessionItem.type))}</strong></p>
+        <p ${coachTooltipAttrs("מספר השחקנים עם רשומת GPS בפעילות האחרונה.")}><span>שחקנים</span><strong>${latestGps.playerCount}</strong></p>
+        <p ${coachTooltipAttrs("מספר השחקנים עם דגל GPS או עומס בפעילות האחרונה.")}><span>התראות</span><strong>${latestGps.alertCount}</strong></p>
+      </div>
+      <a href="/coach/gps" data-route class="text-link">מעבר ל־GPS</a>
+    </article>
+  `;
+}
+
+function buildCoachHomePainSummary(context) {
+  const repeated = context.status.painAlerts.filter((item) => item.reason && item.reason.includes("חוזר"));
+  return {
+    count: context.status.painAlerts.length,
+    repeatedCount: repeated.length,
+    players: unique(context.status.painAlerts.map((item) => item.player && item.player.name).filter(Boolean))
+  };
+}
+
+function renderCoachHomePainCard(pain) {
+  return `
+    <article class="surface coach-home-card">
+      <div class="coach-home-card-title"><span>✚</span><h3>כאב / תשומת לב ${coachInfoTip("דיווחי כאב מהדוחות היומיים. לא אבחנה רפואית, רק סימון לשיחה או בדיקה.")}</h3></div>
+      <div class="brief-stat-list">
+        <p ${coachTooltipAttrs("מספר השחקנים שדיווחו היום על כאב או רגישות.")}><span>דיווחי כאב פעילים</span><strong>${pain.count}</strong></p>
+        <p ${coachTooltipAttrs("כאב שחוזר באותו אזור יותר מפעם אחת בשבוע.")}><span>כאב חוזר</span><strong>${pain.repeatedCount}</strong></p>
+      </div>
+      <p class="brief-player-line">${pain.players.length ? escapeHtml(pain.players.slice(0, 5).join(", ")) : "אין דיווחי כאב חריגים"}</p>
+    </article>
+  `;
+}
+
+function buildCoachHomeHydrationSummary(context) {
+  const alerts = context.status.hydrationAlerts;
+  const highest = Math.max(0, ...alerts.map((item) => item.report.hydration ? Number(item.report.hydration.lossPercent) || 0 : 0));
+  const aboveTwo = alerts.filter((item) => item.report.hydration && item.report.hydration.lossPercent > 2);
+  return { alerts, highest, aboveTwo };
+}
+
+function renderCoachHomeHydrationCard(summary) {
+  return `
+    <article class="surface coach-home-card">
+      <div class="coach-home-card-title"><span>💧</span><h3>הידרציה ${coachInfoTip("מבוסס על השוואת משקל לפני ואחרי פעילות כאשר שני הערכים קיימים.")}</h3></div>
+      <div class="brief-stat-list">
+        <p ${coachTooltipAttrs("מספר השחקנים עם איבוד נוזלים שמצריך תשומת לב.")}><span>שחקנים בסיכון</span><strong>${summary.alerts.length}</strong></p>
+        <p ${coachTooltipAttrs("איבוד הנוזלים הגבוה ביותר שנמדד היום באחוזים.")}><span>איבוד נוזלים גבוה</span><strong>${summary.highest ? `${formatNumber(summary.highest)}%` : "אין"}</strong></p>
+        <p ${coachTooltipAttrs("שחקנים מעל 2% איבוד נוזלים, מצב שמצריך מעקב.")}><span>מעל 2%</span><strong>${summary.aboveTwo.length}</strong></p>
+      </div>
+      <p class="brief-player-line">${summary.aboveTwo.length ? escapeHtml(summary.aboveTwo.map((item) => item.player && item.player.name).filter(Boolean).join(", ")) : "אין שחקנים מעל 2%"}</p>
+    </article>
+  `;
+}
+
+function getCoachHomeUpcomingItems() {
+  const today = todayIso();
+  const gpsItems = state.gpsSessions
+    .filter((sessionItem) => sessionItem.date >= today)
+    .map((sessionItem) => ({
+      date: sessionItem.date,
+      title: sessionItem.sessionName,
+      type: formatGpsSessionType(sessionItem.activityType || sessionItem.type),
+      tone: (sessionItem.activityType || sessionItem.type) === "training" ? "green" : (sessionItem.activityType || sessionItem.type) === "training_match" ? "purple" : "blue"
+    }));
+  const restItems = state.sessions
+    .filter((sessionItem) => sessionItem.date >= today && sessionItem.sessionType === "מנוחה")
+    .map((sessionItem) => ({ date: sessionItem.date, title: "יום מנוחה", type: "מנוחה", tone: "neutral" }));
+  return [...gpsItems, ...restItems].sort((a, b) => a.date.localeCompare(b.date)).slice(0, 3);
+}
+
+function renderCoachHomeCalendarCard(items) {
+  return `
+    <article class="surface coach-home-card">
+      <div class="coach-home-card-title"><span>◌</span><h3>לוח שנה קרוב ${coachInfoTip("שלושת האירועים הקרובים לפי פעילויות GPS וימי מנוחה שתוכננו.")}</h3></div>
+      ${items.length ? `
+        <div class="brief-upcoming-list">
+          ${items.map((item) => `
+            <a href="/coach/calendar" data-route class="brief-upcoming-item ${escapeAttr(item.tone)}">
+              <strong>${escapeHtml(item.title)}</strong>
+              <span>${escapeHtml(formatDateDisplay(item.date))} · ${escapeHtml(item.type)}</span>
+            </a>
+          `).join("")}
+        </div>
+      ` : `<p class="muted-text">אין אירועים קרובים בלוח השנה</p>`}
+    </article>
   `;
 }
 
@@ -1673,14 +2885,14 @@ function renderCoachDashboard() {
   const missingPost = activePlayers.filter((player) => !postIds.has(player.id));
   const filteredPostReports = applyReportFilters(postToday, filters, false);
   const weekRows = buildWeeklyRows(filters);
-  const dashboardCards = buildDashboardCards(activePlayers, readinessToday, postToday, missingPre, missingPost, weekRows);
+  const dashboardStatus = buildCoachDailyStatus(activePlayers, readinessToday, postToday, missingPre, missingPost, weekRows, selectedDate);
   const weekRange = getWeekRange(filters.weekDate || selectedDate);
 
-  const html = coachShell("players", `
+  const html = coachShell("analytics", `
     <div class="page-header premium-header">
       <div>
-        <span class="eyebrow">מרכז מאמן</span>
-        <h2>דשבורד מאמן</h2>
+        <span class="eyebrow">ניתוחים מלאים</span>
+        <h2>ניתוחים</h2>
         <p>${escapeHtml(formatDateDisplay(selectedDate))} · תמונת מצב יומית למוכנות, עומס, הידרציה ו-GPS</p>
       </div>
       <div class="header-actions">
@@ -1689,20 +2901,10 @@ function renderCoachDashboard() {
       </div>
     </div>
 
-    <section class="insight-grid" aria-label="כרטיסי מצב">
-      ${dashboardCards.map(renderInsightCard).join("")}
-    </section>
+    ${renderCoachAiSummary(dashboardStatus)}
 
-    <section class="load-info surface">
-      <strong>איך מחושב עומס?</strong>
-      <span>עומס = דקות פעילות × RPE. לדוגמה: 75 דקות × RPE 8 = 600. המספר שימושי בעיקר להשוואת שינויים יומיים ושבועיים.</span>
-    </section>
-
-    <section class="metric-grid section" aria-label="מדדי יום">
-      ${metricCard("דוחות מוכנות", readinessToday.length, `${activePlayers.length} שחקנים פעילים`)}
-      ${metricCard("דוחות RPE", postToday.length, "אחרי אימון")}
-      ${metricCard("מוכנות ממוצעת", formatInteger(average(readinessToday.map((report) => report.readinessScore))), "מתוך 100")}
-      ${metricCard("עומס יומי", formatInteger(sum(postToday.map((report) => report.trainingLoad))), "יחידות עומס")}
+    <section class="dashboard-kpi-grid" aria-label="מדדי יום מרכזיים">
+      ${dashboardStatus.kpis.map(renderDashboardKpiCard).join("")}
     </section>
 
     <section class="section surface">
@@ -1718,10 +2920,34 @@ function renderCoachDashboard() {
 
     <section class="section">
       <div class="section-title">
+        <h3>שחקנים בסיכון / דורשים בדיקה</h3>
+        <span>${dashboardStatus.riskPlayers.length} שחקנים</span>
+      </div>
+      ${renderRiskPlayersSection(dashboardStatus.riskPlayers)}
+    </section>
+
+    <section class="section dashboard-chart-hub">
+      <div class="section-title">
+        <h3>מבט מגמות יומי</h3>
+        <span>בחר מדד אחד לצפייה</span>
+      </div>
+      ${renderDashboardChartHub(dashboardStatus)}
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <h3>מרכז התראות</h3>
+        <span>${dashboardStatus.alertCount} התראות</span>
+      </div>
+      ${renderAlertCenter(dashboardStatus.alertGroups)}
+    </section>
+
+    <section class="section">
+      <div class="section-title">
         <h3>סטטוס יומי לפי שחקן</h3>
         <span>${activePlayers.length} שחקנים</span>
       </div>
-      ${renderDailyStatusTable(activePlayers, readinessToday, postToday, selectedDate)}
+      ${renderDailyStatusTable(activePlayers, readinessToday, postToday, selectedDate, dashboardStatus.gpsToday, weekRows)}
     </section>
 
     <section class="section">
@@ -1741,7 +2967,483 @@ function renderCoachDashboard() {
     </section>
   `);
 
-  mount(html, bindDashboardFilters);
+  mount(html, () => {
+    bindDashboardFilters();
+    bindDashboardChartHub();
+    bindDashboardKpiCards();
+    bindCoachHomeTooltips();
+  });
+}
+
+function buildCoachDailyStatus(activePlayers, readinessToday, postToday, missingPre, missingPost, weekRows, selectedDate) {
+  const readinessByPlayer = new Map(readinessToday.map((report) => [report.playerId, report]));
+  const postByPlayer = new Map(postToday.map((report) => [report.playerId, report]));
+  const gpsToday = getDashboardGpsRecordsForDate(selectedDate);
+  const gpsRiskItems = gpsToday
+    .filter((record) => record.riskFlags.length)
+    .map((record) => ({ player: getPlayer(record.playerId), reason: record.riskFlags[0], record }));
+  const painAlerts = mergePainReports(readinessToday, postToday);
+  const hydrationAlerts = postToday
+    .filter((report) => report.hydration && report.hydration.tone !== "green")
+    .map((report) => ({ player: getPlayer(report.playerId), reason: `${report.hydration.status} ${formatNumber(report.hydration.lossPercent)}%`, report }));
+  const loadAlerts = weekRows
+    .filter((row) => row.weeklyLoadRisk && row.weeklyLoadRisk.tone !== "green")
+    .map((row) => ({ player: row.player, reason: `${row.weeklyLoadRisk.label} ${formatPercent(row.loadChangePercent)}`, row }));
+  const gpsLoadAlerts = [...gpsRiskItems, ...loadAlerts];
+  const missingItems = [
+    ...missingPre.map((player) => ({ player, reason: "חסר דוח מוכנות" })),
+    ...missingPost.map((player) => ({ player, reason: "חסר דוח RPE" }))
+  ];
+  const riskPlayers = buildDashboardRiskPlayers(activePlayers, readinessByPlayer, postByPlayer, gpsToday, weekRows);
+  const readinessAvg = average(readinessToday.map((report) => report.readinessScore));
+  const submittedTotal = readinessToday.length + postToday.length;
+  const possibleReports = activePlayers.length * 2;
+  const alertGroups = buildDashboardAlertGroups({
+    activePlayers,
+    readinessToday,
+    postToday,
+    missingPre,
+    missingPost,
+    gpsToday,
+    weekRows,
+    painAlerts,
+    hydrationAlerts,
+    gpsLoadAlerts
+  });
+  const alertCount = sum(Object.values(alertGroups).map((items) => items.length));
+  const kpis = buildDashboardKpis({
+    readinessAvg,
+    readinessToday,
+    postToday,
+    activePlayers,
+    riskPlayers,
+    missingPre,
+    missingPost,
+    missingItems,
+    hydrationAlerts,
+    gpsLoadAlerts,
+    painAlerts,
+    submittedTotal,
+    possibleReports
+  });
+  const dailyTrend = buildTeamDailyTrendSeries(selectedDate, 7);
+  const weeklyLoadTrend = buildTeamWeeklyLoadTrend(selectedDate, 6);
+  const hasGpsData = dailyTrend.some((point) => point.gpsLoad > 0);
+  const summary = buildCoachSummary({
+    readinessAvg,
+    readinessToday,
+    postToday,
+    activePlayers,
+    riskPlayers,
+    missingItems,
+    painAlerts,
+    hydrationAlerts,
+    gpsLoadAlerts
+  });
+
+  return {
+    readinessAvg,
+    submittedTotal,
+    possibleReports,
+    gpsToday,
+    riskPlayers,
+    missingPre,
+    missingPost,
+    missingItems,
+    painAlerts,
+    hydrationAlerts,
+    gpsLoadAlerts,
+    kpis,
+    alertGroups,
+    alertCount,
+    dailyTrend,
+    weeklyLoadTrend,
+    hasGpsData,
+    summary
+  };
+}
+
+function buildDashboardKpis(data) {
+  return [
+    {
+      icon: "⚠️",
+      title: "שחקנים בסיכון",
+      value: data.riskPlayers.length,
+      note: "דורשים בדיקה",
+      tone: data.riskPlayers.length ? "red" : "green",
+      items: data.riskPlayers.map((row) => ({ player: row.player, reason: row.mainReason }))
+    },
+    {
+      icon: "📝",
+      title: "דוחות מוכנות חסרים",
+      value: data.missingPre.length,
+      note: "לפני אימון",
+      tone: data.missingPre.length ? "yellow" : "green",
+      items: data.missingPre.map((player) => ({ player, reason: "חסר דוח מוכנות" }))
+    },
+    {
+      icon: "📝",
+      title: "דוחות RPE חסרים",
+      value: data.missingPost.length,
+      note: "אחרי אימון",
+      tone: data.missingPost.length ? "yellow" : "green",
+      items: data.missingPost.map((player) => ({ player, reason: "חסר דוח RPE" }))
+    },
+    {
+      icon: "✚",
+      title: "כאבים פעילים",
+      value: data.painAlerts.length,
+      note: "דיווחי כאב",
+      tone: data.painAlerts.length ? "yellow" : "green",
+      items: data.painAlerts
+    },
+    {
+      icon: "📡",
+      title: "חריגות GPS",
+      value: data.gpsLoadAlerts.length,
+      note: "חריגות עומס",
+      tone: data.gpsLoadAlerts.length ? "red" : "green",
+      items: data.gpsLoadAlerts
+    },
+    {
+      icon: "💧",
+      title: "הידרציה חריגה",
+      value: data.hydrationAlerts.length,
+      note: "איבוד נוזלים",
+      tone: data.hydrationAlerts.some((item) => item.report.hydration && item.report.hydration.tone === "red") ? "red" : data.hydrationAlerts.length ? "yellow" : "green",
+      items: data.hydrationAlerts
+    }
+  ];
+}
+
+function buildCoachSummary(data) {
+  const playerNames = data.riskPlayers.slice(0, 3).map((row) => row.player.name).join(", ");
+  const missingNames = data.missingItems.slice(0, 3).map((item) => item.player.name).join(", ");
+  const bullets = [
+    {
+      icon: "⚠️",
+      title: "שחקנים לבדיקה",
+      value: data.riskPlayers.length ? `${data.riskPlayers.length}${playerNames ? ` - ${playerNames}` : ""}` : "אין"
+    },
+    {
+      icon: "📝",
+      title: "דוחות חסרים",
+      value: data.missingItems.length ? `${data.missingItems.length}${missingNames ? ` - ${missingNames}` : ""}` : "אין"
+    },
+    {
+      icon: "📡",
+      title: "GPS / עומס",
+      value: data.gpsLoadAlerts.length ? `${data.gpsLoadAlerts.length} חריגות` : "אין חריגות"
+    },
+    {
+      icon: "✚",
+      title: "כאבים",
+      value: data.painAlerts.length ? `${data.painAlerts.length} דיווחים` : "אין דיווחים חריגים"
+    },
+    {
+      icon: "💧",
+      title: "הידרציה",
+      value: data.hydrationAlerts.length ? `${data.hydrationAlerts.length} התראות` : "תקין"
+    }
+  ];
+  return { bullets };
+}
+
+function renderCoachAiSummary(status) {
+  return `
+    <section class="surface coach-ai-summary compact-summary">
+      <div class="summary-main">
+        <span class="eyebrow">AI Summary / Coach Summary</span>
+        <h3>תמונת מצב יומית</h3>
+        <div class="summary-bullets">
+          ${status.summary.bullets.map((item) => `
+            <p>
+              <span class="summary-icon" aria-hidden="true">${escapeHtml(item.icon)}</span>
+              <span><strong>${escapeHtml(item.title)}:</strong> ${escapeHtml(item.value)}</span>
+            </p>
+          `).join("")}
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderDashboardKpiCard(card) {
+  const items = card.items && card.items.length ? card.items : [{ player: null, reason: "תקין" }];
+  const statusLabel = card.tone === "green" ? "תקין" : card.tone === "yellow" ? "לשים לב" : "לבדוק";
+  return `
+    <article class="dashboard-kpi-card ${card.tone}" tabindex="0">
+      <div class="kpi-card-top">
+        <span><i aria-hidden="true">${escapeHtml(card.icon || "•")}</i>${escapeHtml(card.title)}</span>
+      </div>
+      <strong>${escapeHtml(card.value)}</strong>
+      <small class="kpi-status ${card.tone}">${escapeHtml(statusLabel)} · ${escapeHtml(card.note)}</small>
+      <div class="kpi-detail-popover" role="tooltip">
+        <strong>${escapeHtml(card.title)}</strong>
+        ${items.slice(0, 8).map((item) => `
+          <p>
+            <b>${item.player ? escapeHtml(item.player.name) : "מצב כללי"}</b>
+            <span>${escapeHtml(item.reason || item.details || "תקין")}</span>
+          </p>
+        `).join("")}
+        ${items.length > 8 ? `<em>ועוד ${items.length - 8}</em>` : ""}
+      </div>
+    </article>
+  `;
+}
+
+function bindDashboardKpiCards() {
+  const closeCards = () => {
+    document.querySelectorAll(".dashboard-kpi-card.detail-open").forEach((card) => card.classList.remove("detail-open"));
+  };
+  document.querySelectorAll(".dashboard-kpi-card").forEach((card) => {
+    card.addEventListener("click", (event) => {
+      const wasOpen = card.classList.contains("detail-open");
+      closeCards();
+      if (!wasOpen) {
+        event.stopPropagation();
+        card.classList.add("detail-open");
+        document.addEventListener("click", closeCards, { once: true });
+      }
+    });
+    card.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") closeCards();
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        card.click();
+      }
+    });
+  });
+}
+
+function buildDashboardRiskPlayers(players, readinessByPlayer, postByPlayer, gpsToday, weekRows) {
+  const gpsByPlayer = new Map();
+  gpsToday.filter((record) => record.riskFlags.length).forEach((record) => {
+    const current = gpsByPlayer.get(record.playerId) || [];
+    gpsByPlayer.set(record.playerId, unique([...current, ...record.riskFlags]));
+  });
+  const weekByPlayer = new Map(weekRows.map((row) => [row.player.id, row]));
+  return players.map((player) => {
+    const readiness = readinessByPlayer.get(player.id) || null;
+    const post = postByPlayer.get(player.id) || null;
+    const week = weekByPlayer.get(player.id) || null;
+    const gpsFlags = gpsByPlayer.get(player.id) || [];
+    const painArea = [post && post.painArea !== NO_PAIN ? post.painArea : "", readiness && readiness.painArea !== NO_PAIN ? readiness.painArea : ""].find(Boolean) || "";
+    const reasons = unique([
+      ...(readiness && readiness.readinessScore < 80 ? [`מוכנות ${readiness.readinessScore}`] : []),
+      ...(post && post.rpe >= state.settings.rpeHigh ? [`RPE ${post.rpe}`] : []),
+      ...(painArea ? [`כאב ב${painArea}`] : []),
+      ...(post && post.hydration && post.hydration.tone !== "green" ? [post.hydration.status] : []),
+      ...(week && week.weeklyLoadRisk && week.weeklyLoadRisk.tone !== "green" ? [week.weeklyLoadRisk.label] : []),
+      ...gpsFlags.slice(0, 2),
+      ...(readiness ? readiness.riskFlags.slice(0, 2) : []),
+      ...(post ? post.riskFlags.slice(0, 2) : [])
+    ]);
+    if (!reasons.length) return null;
+    const severity = (readiness && readiness.readinessScore < 60) || (post && post.rpe >= 9) || (post && post.hydration && post.hydration.tone === "red") || gpsFlags.length ? 2 : 1;
+    return {
+      player,
+      mainReason: reasons[0],
+      reasons,
+      readinessScore: readiness ? readiness.readinessScore : null,
+      rpe: post ? post.rpe : null,
+      painArea,
+      hydration: post ? post.hydration : null,
+      gpsLoadAlert: gpsFlags[0] || (week && week.weeklyLoadRisk && week.weeklyLoadRisk.tone !== "green" ? week.weeklyLoadRisk.label : ""),
+      severity
+    };
+  }).filter(Boolean).sort((a, b) => b.severity - a.severity || (a.readinessScore || 999) - (b.readinessScore || 999));
+}
+
+function renderRiskPlayersSection(rows) {
+  if (!rows.length) return `<div class="surface empty">אין שחקנים בסיכון משמעותי היום</div>`;
+  return `
+    <div class="risk-player-grid">
+      ${rows.map((row) => `
+        <article class="risk-player-card ${row.severity > 1 ? "red" : "yellow"}">
+          <div class="risk-player-head">
+            <a href="/coach/player/${escapeAttr(row.player.id)}" data-route>${escapeHtml(row.player.name)}</a>
+            <span class="badge ${row.severity > 1 ? "red" : "yellow"}">${escapeHtml(row.mainReason)}</span>
+          </div>
+          <div class="risk-player-metrics">
+            <span>מוכנות: <b>${row.readinessScore !== null ? escapeHtml(formatInteger(row.readinessScore)) : "אין"}</b></span>
+            <span>RPE: <b>${row.rpe !== null ? escapeHtml(row.rpe) : "אין"}</b></span>
+            <span>כאב: <b>${escapeHtml(row.painArea || "אין")}</b></span>
+            <span>הידרציה: <b>${row.hydration ? escapeHtml(row.hydration.status) : "אין נתון"}</b></span>
+          </div>
+          <p>${escapeHtml(row.reasons.slice(0, 4).join(" · "))}</p>
+          ${row.gpsLoadAlert ? `<small>GPS/עומס: ${escapeHtml(row.gpsLoadAlert)}</small>` : ""}
+        </article>
+      `).join("")}
+    </div>
+  `;
+}
+
+function buildDashboardAlertGroups(data) {
+  const highRpe = data.postToday
+    .filter((report) => report.rpe >= state.settings.rpeHigh)
+    .map((report) => dashboardAlert(getPlayer(report.playerId), "RPE גבוה", `RPE ${report.rpe}, עומס ${formatInteger(report.trainingLoad)}`, "לבדוק התאוששות ולשקול הורדת עומס."));
+  return {
+    "GPS": data.gpsLoadAlerts.map((item) => dashboardAlert(item.player, "GPS/עומס", item.reason, "לבחון דקות, HSR ועומס שבועי.")),
+    "כאבים": data.painAlerts.map((item) => dashboardAlert(item.player, "דיווח כאב", item.reason, "לעקוב ולערב צוות רפואי אם הכאב חוזר.")),
+    "הידרציה": data.hydrationAlerts.map((item) => dashboardAlert(item.player, "הידרציה", item.reason, "הנחיית שתייה, התאוששות ושקילה חוזרת.")),
+    "RPE": highRpe,
+    "דוחות חסרים": [
+      ...data.missingPre.map((player) => dashboardAlert(player, "חסר דוח מוכנות", "לא מילא דוח לפני אימון", "להזכיר מילוי לפני האימון.")),
+      ...data.missingPost.map((player) => dashboardAlert(player, "חסר דוח RPE", "לא מילא דוח אחרי אימון", "להשלים דוח אחרי האימון."))
+    ]
+  };
+}
+
+function dashboardAlert(player, type, reason, action) {
+  return { player, type, reason, action };
+}
+
+function renderAlertCenter(groups) {
+  const groupEntries = Object.entries(groups);
+  if (!groupEntries.some(([, alerts]) => alerts.length)) return `<div class="surface empty">אין התראות פעילות היום</div>`;
+  return `
+    <div class="alert-center-grid">
+      ${groupEntries.map(([title, alerts]) => renderAlertGroup(title, alerts)).join("")}
+    </div>
+  `;
+}
+
+function renderAlertGroup(title, alerts) {
+  return `
+    <details class="alert-group-card">
+      <summary>
+        <span><i aria-hidden="true">${escapeHtml(getAlertGroupIcon(title))}</i>${escapeHtml(title)}</span>
+        <strong>${escapeHtml(alerts.length)}</strong>
+      </summary>
+      <div class="alert-group-list">
+        ${alerts.length ? alerts.map(renderAlertRow).join("") : `<p class="muted-row">אין התראות</p>`}
+      </div>
+    </details>
+  `;
+}
+
+function getAlertGroupIcon(title) {
+  if (title.includes("GPS")) return "📡";
+  if (title.includes("כאב")) return "✚";
+  if (title.includes("הידרציה")) return "💧";
+  if (title.includes("RPE")) return "↗";
+  if (title.includes("דוח")) return "📝";
+  return "•";
+}
+
+function renderAlertRow(alert) {
+  return `
+    <article class="alert-row">
+      <div>
+        <strong>${alert.player ? escapeHtml(alert.player.name) : "שחקן לא ידוע"}</strong>
+        <span>${escapeHtml(alert.type)} · ${escapeHtml(alert.reason)}</span>
+      </div>
+      <p>${escapeHtml(alert.action)}</p>
+    </article>
+  `;
+}
+
+function getDashboardGpsRecordsForDate(date) {
+  const records = state.gpsRecords.map(getComputedGpsRecord).filter((record) => record.date === date);
+  return getFullPeriodPreferred(records);
+}
+
+function buildTeamDailyTrendSeries(anchorDate, days) {
+  return Array.from({ length: days }, (_, index) => {
+    const date = addDays(anchorDate, index - (days - 1));
+    const readiness = state.readinessReports.filter((report) => report.date === date).map(getComputedReadiness);
+    const posts = state.reports.filter((report) => report.date === date).map(getComputedReport);
+    const gps = getDashboardGpsRecordsForDate(date);
+    return {
+      date,
+      readinessAvg: average(readiness.map((report) => report.readinessScore)),
+      avgRpe: average(posts.map((report) => report.rpe)),
+      hydrationRiskCount: posts.filter((report) => report.hydration && report.hydration.tone !== "green").length,
+      gpsLoad: Math.round(average(gps.map((record) => record.gpsLoad)) || 0)
+    };
+  });
+}
+
+function buildTeamWeeklyLoadTrend(anchorDate, weeks) {
+  const currentRange = getWeekRange(anchorDate);
+  return Array.from({ length: weeks }, (_, index) => {
+    const weekStart = addDays(currentRange.start, (index - (weeks - 1)) * 7);
+    const range = getWeekRange(weekStart);
+    const posts = state.reports.filter((report) => isWithinRange(report.date, range)).map(getComputedReport);
+    return {
+      date: range.start,
+      totalLoad: sum(posts.map((report) => report.trainingLoad))
+    };
+  });
+}
+
+function renderDashboardChartHub(status) {
+  const charts = [
+    {
+      id: "readiness",
+      label: "מוכנות",
+      title: "מגמת מוכנות קבוצתית",
+      content: renderLineChart(status.dailyTrend, "readinessAvg", "מוכנות")
+    },
+    {
+      id: "load",
+      label: "עומס",
+      title: "מגמת עומס שבועית",
+      content: renderLineChart(status.weeklyLoadTrend, "totalLoad", "עומס שבועי")
+    },
+    {
+      id: "rpe",
+      label: "RPE",
+      title: "מגמת RPE ממוצע",
+      content: renderLineChart(status.dailyTrend, "avgRpe", "RPE")
+    },
+    {
+      id: "gps",
+      label: "GPS",
+      title: "סקירת עומס GPS",
+      content: status.hasGpsData ? renderLineChart(status.dailyTrend, "gpsLoad", "עומס GPS") : `<div class="empty">אין נתוני GPS להצגה</div>`
+    },
+    {
+      id: "hydration",
+      label: "הידרציה",
+      title: "מגמת הידרציה",
+      content: renderLineChart(status.dailyTrend, "hydrationRiskCount", "חריגות הידרציה")
+    }
+  ];
+  return `
+    <div class="surface dashboard-chart-shell">
+      <div class="chart-selector-row" role="tablist" aria-label="בחירת גרף דשבורד">
+        ${charts.map((item, index) => `
+          <button class="${index === 0 ? "is-active" : ""}" type="button" role="tab" aria-selected="${index === 0 ? "true" : "false"}" data-dashboard-chart="${escapeAttr(item.id)}">${escapeHtml(item.label)}</button>
+        `).join("")}
+      </div>
+      <div class="dashboard-chart-panels">
+        ${charts.map((item, index) => `
+          <article class="dashboard-chart-panel" data-dashboard-chart-panel="${escapeAttr(item.id)}" ${index === 0 ? "" : "hidden"}>
+            <h3>${escapeHtml(item.title)}</h3>
+            ${item.content}
+          </article>
+        `).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function bindDashboardChartHub() {
+  document.querySelectorAll("[data-dashboard-chart]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const target = button.getAttribute("data-dashboard-chart");
+      document.querySelectorAll("[data-dashboard-chart]").forEach((item) => {
+        const isActive = item === button;
+        item.classList.toggle("is-active", isActive);
+        item.setAttribute("aria-selected", isActive ? "true" : "false");
+      });
+      document.querySelectorAll("[data-dashboard-chart-panel]").forEach((panel) => {
+        panel.hidden = panel.getAttribute("data-dashboard-chart-panel") !== target;
+      });
+    });
+  });
 }
 
 function bindDashboardFilters() {
@@ -1868,14 +3570,21 @@ function renderInsightCard(card) {
   `;
 }
 
-function renderDailyStatusTable(players, readinessReports, postReports, selectedDate) {
+function renderDailyStatusTable(players, readinessReports, postReports, selectedDate, gpsToday = [], weekRows = []) {
   const readinessByPlayer = new Map(readinessReports.map((report) => [report.playerId, report]));
   const postByPlayer = new Map(postReports.map((report) => [report.playerId, report]));
+  const gpsByPlayer = new Map();
+  gpsToday.filter((record) => record.riskFlags && record.riskFlags.length).forEach((record) => {
+    const current = gpsByPlayer.get(record.playerId) || [];
+    gpsByPlayer.set(record.playerId, unique([...current, ...record.riskFlags]));
+  });
+  const weekByPlayer = new Map(weekRows.map((row) => [row.player.id, row]));
   return `
     <div class="table-wrap">
       <table>
         <thead>
           <tr>
+            <th>סטטוס</th>
             <th>שם שחקן</th>
             <th>דוח מוכנות</th>
             <th>דוח RPE</th>
@@ -1891,10 +3600,12 @@ function renderDailyStatusTable(players, readinessReports, postReports, selected
           ${players.map((player) => {
             const readiness = readinessByPlayer.get(player.id);
             const post = postByPlayer.get(player.id);
+            const status = getDashboardPlayerDailyStatus(player, readiness, post, gpsByPlayer, weekByPlayer);
             const pain = unique([readiness && readiness.painArea !== NO_PAIN ? readiness.painArea : "", post && post.painArea !== NO_PAIN ? post.painArea : ""].filter(Boolean));
             const flags = unique([...(readiness ? readiness.riskFlags : []), ...(post ? post.riskFlags : [])]);
             return `
               <tr>
+                <td><span class="daily-status-pill ${escapeAttr(status.tone)}" ${coachTooltipAttrs(status.reasons.join(", ") || "תקין")}>${escapeHtml(status.label)}</span></td>
                 <td><a href="/coach/player/${escapeAttr(player.id)}" data-route class="table-link">${escapeHtml(player.name)}</a></td>
                 <td>${readiness ? `<span class="badge green">בוצע</span>` : `<span class="badge yellow">חסר</span>`}</td>
                 <td>${post ? `<span class="badge green">בוצע</span>` : `<span class="badge yellow">חסר</span>`}</td>
@@ -1911,6 +3622,62 @@ function renderDailyStatusTable(players, readinessReports, postReports, selected
       </table>
     </div>
   `;
+}
+
+function getDashboardPlayerDailyStatus(player, readiness, post, gpsByPlayer, weekByPlayer) {
+  const reasons = [];
+  let severity = 0;
+  if (!readiness) {
+    severity = Math.max(severity, 1);
+    reasons.push("חסר דוח מוכנות");
+  }
+  if (!post) {
+    severity = Math.max(severity, 1);
+    reasons.push("חסר דוח RPE");
+  }
+  if (!readiness && !post) severity = 2;
+  if (readiness && readiness.readinessScore < 60) {
+    severity = 2;
+    reasons.push("מוכנות נמוכה");
+  } else if (readiness && readiness.readinessScore < 80) {
+    severity = Math.max(severity, 1);
+    reasons.push("מוכנות למעקב");
+  }
+  if (post && post.rpe >= 9) {
+    severity = 2;
+    reasons.push("RPE גבוה");
+  } else if (post && post.rpe >= state.settings.rpeHigh) {
+    severity = Math.max(severity, 1);
+    reasons.push("RPE גבוה");
+  }
+  const hasPain = (readiness && readiness.painArea && readiness.painArea !== NO_PAIN) || (post && post.painArea && post.painArea !== NO_PAIN);
+  if (hasPain) {
+    severity = Math.max(severity, 1);
+    reasons.push("דיווח כאב");
+  }
+  if (post && post.hydration && post.hydration.tone === "red") {
+    severity = 2;
+    reasons.push("הידרציה חריגה");
+  } else if (post && post.hydration && post.hydration.tone === "yellow") {
+    severity = Math.max(severity, 1);
+    reasons.push("הידרציה למעקב");
+  }
+  const gpsFlags = gpsByPlayer.get(player.id) || [];
+  if (gpsFlags.length) {
+    severity = 2;
+    reasons.push("חריגת GPS");
+  }
+  const week = weekByPlayer.get(player.id);
+  if (week && week.weeklyLoadRisk && week.weeklyLoadRisk.tone === "red") {
+    severity = 2;
+    reasons.push("קפיצה בעומס");
+  } else if (week && week.weeklyLoadRisk && week.weeklyLoadRisk.tone === "yellow") {
+    severity = Math.max(severity, 1);
+    reasons.push("עומס למעקב");
+  }
+  if (severity >= 2) return { label: "🔴 בדיקה", tone: "red", reasons: unique(reasons) };
+  if (severity === 1) return { label: "🟡 מעקב", tone: "yellow", reasons: unique(reasons) };
+  return { label: "🟢 תקין", tone: "green", reasons: [] };
 }
 
 function renderCoachPlayersPage() {
@@ -1963,6 +3730,7 @@ function renderCoachPlayersPage() {
 
 function renderCoachReportsPage() {
   const selectedDate = uiState.dashboardFilters.date || todayIso();
+  return renderCoachReportsAnalysisPage(selectedDate);
   const activePlayers = getActivePlayers();
   const readinessToday = state.readinessReports.filter((report) => report.date === selectedDate).map(getComputedReadiness);
   const postToday = state.reports.filter((report) => report.date === selectedDate).map(getComputedReport);
@@ -2006,6 +3774,218 @@ function renderCoachReportsPage() {
   mount(html);
 }
 
+function renderCoachReportsAnalysisPage(selectedDate) {
+  const context = buildReportsAnalysisContext(selectedDate);
+  const html = coachShell("reports", `
+    <div class="page-header premium-header report-header">
+      <div>
+        <span class="eyebrow">Report Analysis</span>
+        <h2>מרכז ניתוח דוחות</h2>
+        <p>${escapeHtml(formatDateDisplay(selectedDate))} · מה הדוחות מספרים לי על מוכנות, התאוששות ועומסים?</p>
+      </div>
+      <a href="/coach" data-route class="btn secondary">חזרה לתדרוך יומי</a>
+    </div>
+
+    <section class="report-analysis-hero surface">
+      <div>
+        <span class="eyebrow">תמונת מצב מקצועית</span>
+        <h3>${escapeHtml(context.mainInsight.title)}</h3>
+        <p>${escapeHtml(context.mainInsight.text)}</p>
+      </div>
+      <div class="report-analysis-hero-grid">
+        ${reportInsightMini("מוכנות ממוצעת", context.averages.readiness ? `${formatInteger(context.averages.readiness)}/100` : "אין נתון")}
+        ${reportInsightMini("שינה ממוצעת", context.averages.sleep ? `${formatNumber(context.averages.sleep)} ש׳` : "אין נתון")}
+        ${reportInsightMini("RPE ממוצע", context.averages.rpe ? formatNumber(context.averages.rpe) : "אין נתון")}
+        ${reportInsightMini("איבוד נוזלים ממוצע", context.averages.hydration ? `${formatNumber(context.averages.hydration)}%` : "אין נתון")}
+      </div>
+    </section>
+
+    <section class="report-analysis-grid">
+      ${renderReportAnalysisCard("מגמת מוכנות", context.trends.readiness, "מבוסס על ציון מוכנות יומי ממוצע", "readiness")}
+      ${renderReportAnalysisCard("שינה והתאוששות", context.trends.sleep, "שעות שינה ואיכות שינה מהדוחות", "sleep")}
+      ${renderReportAnalysisCard("הידרציה", context.trends.hydration, "איבוד נוזלים מחושב כאשר קיימים משקל לפני ואחרי", "hydration")}
+      ${renderReportAnalysisCard("דיווחי כאב", context.trends.pain, "שחקנים שדיווחו כאב או כאב חוזר", "pain")}
+      ${renderReportAnalysisCard("RPE ועומס פנימי", context.trends.rpe, "RPE ועומס מחושב לפי דקות המאמן", "rpe")}
+      ${renderReportAnalysisCard("ממוצעים שבועיים", context.trends.weekly, "השוואת עומס ומוכנות לפי שחקן בשבוע הנוכחי", "weekly")}
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <h3>מגמות קבוצה</h3>
+        <span>14 ימים אחרונים</span>
+      </div>
+      <div class="charts-grid">
+        ${chartCard("מוכנות", renderLineChart(context.dailySeries, "readinessAvg", "מוכנות"))}
+        ${chartCard("שינה", renderLineChart(context.dailySeries, "sleepAvg", "שעות שינה"))}
+        ${chartCard("RPE", renderLineChart(context.dailySeries, "rpeAvg", "RPE"))}
+        ${chartCard("הידרציה", renderLineChart(context.dailySeries, "hydrationAvg", "איבוד נוזלים %"))}
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <h3>השוואת שחקנים השבוע</h3>
+        <span>${context.weekRows.length} שחקנים עם נתונים</span>
+      </div>
+      ${renderReportsPlayerComparison(context.weekRows)}
+    </section>
+
+    <details class="surface report-raw-tables">
+      <summary>
+        <span>טבלת דוחות מלאה</span>
+        <strong>${context.readinessReports.length + context.postReports.length} רשומות</strong>
+      </summary>
+      <div class="grid two">
+        <section>
+          <div class="section-title">
+            <h3>דוחות מוכנות</h3>
+            <span>${context.readinessReports.length} רשומות</span>
+          </div>
+          ${renderReadinessTable(context.readinessReports)}
+        </section>
+        <section>
+          <div class="section-title">
+            <h3>דוחות RPE</h3>
+            <span>${context.postReports.length} רשומות</span>
+          </div>
+          ${renderReportsTable(context.postReports, true)}
+        </section>
+      </div>
+    </details>
+  `);
+  mount(html);
+}
+
+function buildReportsAnalysisContext(selectedDate) {
+  const readinessReports = state.readinessReports
+    .map(getComputedReadiness)
+    .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
+  const postReports = state.reports
+    .map(getComputedReport)
+    .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
+  const dailySeries = buildReportsDailySeries(selectedDate, 14);
+  const weekRows = buildWeeklyRows({ ...uiState.dashboardFilters, date: "all", weekDate: selectedDate })
+    .filter((row) => row.reportCount || row.avgReadiness || row.avgSleep)
+    .sort((a, b) => (b.flags.length - a.flags.length) || b.totalLoad - a.totalLoad)
+    .slice(0, 8);
+  const hydrationReports = postReports.filter((report) => report.hydration);
+  const painReports = [...readinessReports, ...postReports].filter((report) => report.painArea && report.painArea !== NO_PAIN);
+  const averages = {
+    readiness: average(readinessReports.slice(0, 40).map((report) => report.readinessScore)),
+    sleep: average(readinessReports.slice(0, 40).map((report) => report.sleepHours)),
+    rpe: average(postReports.slice(0, 40).map((report) => report.rpe)),
+    hydration: average(hydrationReports.slice(0, 40).map((report) => report.hydration.lossPercent))
+  };
+  const trends = {
+    readiness: describeReportTrend(dailySeries, "readinessAvg", "מוכנות"),
+    sleep: describeReportTrend(dailySeries, "sleepAvg", "שינה"),
+    hydration: describeReportTrend(dailySeries, "hydrationAvg", "הידרציה", true),
+    pain: {
+      tone: painReports.length ? "yellow" : "green",
+      value: painReports.length,
+      label: painReports.length ? `${painReports.length} דיווחים` : "אין דיווחים חריגים",
+      detail: painReports.length ? unique(painReports.slice(0, 5).map((report) => report.playerName)).join(", ") : "אין דיווחי כאב זמינים בתקופה."
+    },
+    rpe: describeReportTrend(dailySeries, "rpeAvg", "RPE", true),
+    weekly: {
+      tone: weekRows.some((row) => row.weeklyLoadRisk && row.weeklyLoadRisk.tone === "red") ? "red" : weekRows.length ? "yellow" : "green",
+      value: weekRows.length,
+      label: weekRows.length ? `${weekRows.length} שחקנים עם נתוני שבוע` : "אין נתוני שבוע",
+      detail: weekRows[0] ? `${weekRows[0].player.name}: עומס ${formatInteger(weekRows[0].totalLoad)}` : "אין מספיק נתונים להשוואה."
+    }
+  };
+  const mainInsight = buildReportsMainInsight(trends, averages);
+  return { selectedDate, readinessReports, postReports, dailySeries, weekRows, hydrationReports, painReports, averages, trends, mainInsight };
+}
+
+function buildReportsDailySeries(anchorDate, days) {
+  return getDateRangeList(addDays(anchorDate, -(days - 1)), anchorDate).map((date) => {
+    const readiness = state.readinessReports.filter((report) => report.date === date).map(getComputedReadiness);
+    const posts = state.reports.filter((report) => report.date === date).map(getComputedReport);
+    const hydration = posts.filter((report) => report.hydration);
+    return {
+      date,
+      readinessAvg: average(readiness.map((report) => report.readinessScore)),
+      sleepAvg: average(readiness.map((report) => report.sleepHours)),
+      rpeAvg: average(posts.map((report) => report.rpe)),
+      loadAvg: average(posts.map((report) => report.trainingLoad)),
+      hydrationAvg: average(hydration.map((report) => report.hydration.lossPercent)),
+      painCount: readiness.filter((report) => report.painArea && report.painArea !== NO_PAIN).length + posts.filter((report) => report.painArea && report.painArea !== NO_PAIN).length
+    };
+  });
+}
+
+function describeReportTrend(series, key, label, lowerIsBetter = false) {
+  const values = series.map((point) => Number(point[key]) || 0).filter((value) => value > 0);
+  if (values.length < 2) return { tone: "green", value: 0, label: "אין מספיק נתונים", detail: `אין מספיק נתונים להצגת מגמת ${label}.` };
+  const first = average(values.slice(0, Math.ceil(values.length / 2)));
+  const second = average(values.slice(Math.floor(values.length / 2)));
+  const delta = second - first;
+  const tone = Math.abs(delta) < 0.3 ? "green" : (lowerIsBetter ? delta > 0 : delta < 0) ? "yellow" : "green";
+  const direction = Math.abs(delta) < 0.3 ? "יציבה" : delta > 0 ? "בעלייה" : "בירידה";
+  return {
+    tone,
+    value: second,
+    label: `${label} ${direction}`,
+    detail: `ממוצע אחרון: ${formatNumber(second)} לעומת ${formatNumber(first)} בתחילת התקופה.`
+  };
+}
+
+function buildReportsMainInsight(trends, averages) {
+  const issues = [];
+  if (trends.readiness.tone !== "green") issues.push("מוכנות בירידה");
+  if (trends.sleep.tone !== "green" || (averages.sleep && averages.sleep < state.settings.sleepHoursLow)) issues.push("שינה דורשת מעקב");
+  if (trends.hydration.tone !== "green") issues.push("הידרציה דורשת תשומת לב");
+  if (trends.pain.value) issues.push("קיימים דיווחי כאב");
+  if (trends.rpe.tone !== "green") issues.push("RPE במגמת עומס");
+  if (!issues.length) {
+    return { title: "הדוחות מצביעים על מצב יציב", text: "אין חריגה מרכזית במגמות האחרונות. מומלץ להמשיך מעקב שגרתי לפי שחקנים." };
+  }
+  return { title: `${issues.length} נושאים דורשים מעקב`, text: issues.slice(0, 4).join(" · ") };
+}
+
+function reportInsightMini(label, value) {
+  return `
+    <div>
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+    </div>
+  `;
+}
+
+function renderReportAnalysisCard(title, trend, helper, iconClass) {
+  return `
+    <article class="surface report-analysis-card ${escapeAttr(trend.tone)} ${escapeAttr(iconClass)}">
+      <span>${escapeHtml(helper)}</span>
+      <strong>${escapeHtml(title)}</strong>
+      <b>${escapeHtml(trend.label)}</b>
+      <p>${escapeHtml(trend.detail)}</p>
+    </article>
+  `;
+}
+
+function renderReportsPlayerComparison(rows) {
+  if (!rows.length) return `<div class="surface empty">אין מספיק נתונים להשוואת שחקנים השבוע</div>`;
+  return `
+    <div class="report-player-comparison">
+      ${rows.map((row) => `
+        <a href="/coach/player/${escapeAttr(row.player.id)}" data-route class="report-player-card">
+          <div>
+            <strong>${escapeHtml(row.player.name)}</strong>
+            <span>${escapeHtml(row.flags.slice(0, 2).join(", ") || "ללא חריגה מרכזית")}</span>
+          </div>
+          <div class="report-player-metrics">
+            <span>מוכנות <b>${escapeHtml(row.avgReadiness ? formatInteger(row.avgReadiness) : "אין")}</b></span>
+            <span>שינה <b>${escapeHtml(row.avgSleep ? formatNumber(row.avgSleep) : "אין")}</b></span>
+            <span>RPE <b>${escapeHtml(row.avgRpe ? formatNumber(row.avgRpe) : "אין")}</b></span>
+            <span>עומס <b>${escapeHtml(formatInteger(row.totalLoad))}</b></span>
+          </div>
+        </a>
+      `).join("")}
+    </div>
+  `;
+}
+
 function renderCoachSummaryCard(card) {
   const items = card.items && card.items.length ? card.items : [{ player: null, reason: "תקין", details: "אין חריגים משמעותיים" }];
   const tone = card.items && card.items.length ? card.tone : "green";
@@ -2027,13 +4007,13 @@ function renderCoachSummaryCard(card) {
   `;
 }
 
-function renderPlayerProfile(playerId) {
+function renderPlayerProfile(playerId, activeTab = "readiness") {
   const player = state.players.find((item) => item.id === playerId);
   if (!player) {
     renderNotFound();
     return;
   }
-
+  activeTab = normalizeCoachPlayerProfileTab(activeTab);
   const postReports = state.reports
     .filter((report) => report.playerId === player.id)
     .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt))
@@ -2042,168 +4022,733 @@ function renderPlayerProfile(playerId) {
     .filter((report) => report.playerId === player.id)
     .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt))
     .map(getComputedReadiness);
-  const lastPost = postReports[0] || null;
-  const lastReadiness = readinessReports[0] || null;
-  const currentSummary = summarizePlayerWeek(player.id, todayIso());
-  const previousSummary = summarizePlayerWeek(player.id, addDays(getWeekRange(todayIso()).start, -1));
-  const change = calculateChangePercent(currentSummary.totalLoad, previousSummary.totalLoad);
-  const postSeries = buildPlayerPostSeries(player.id).slice(-14);
-  const readinessSeries = buildPlayerReadinessSeries(player.id).slice(-14);
-  const hydrationSeries = postSeries.filter((report) => report.hydration).map((report) => ({ ...report, hydrationLossPercent: report.hydration.lossPercent }));
-  const weeklyLoadSeries = buildWeeklyLoadSeries(player.id).slice(-8);
   const gpsRecords = state.gpsRecords
     .filter((record) => record.playerId === player.id)
     .map(getComputedGpsRecord)
     .sort((a, b) => b.date.localeCompare(a.date));
-  const gpsFullRecords = (gpsRecords.filter((record) => record.period === "משחק מלא").length ? gpsRecords.filter((record) => record.period === "משחק מלא") : gpsRecords).sort((a, b) => a.date.localeCompare(b.date));
-  const internalExternalSeries = buildInternalExternalSeries(player.id);
+  const context = buildCoachPlayerProfileContext(player, activeTab, postReports, readinessReports, gpsRecords);
+
+  const html = coachShell("players", `
+    ${renderCoachPlayerProfileHero(context)}
+    ${renderCoachPlayerProfileTabs(context)}
+    ${renderCoachPlayerProfileTabContent(context)}
+  `);
+
+  mount(html, () => bindCoachPlayerProfile(context));
+}
+
+function buildCoachPlayerProfileContext(player, activeTab, postReports, readinessReports, gpsRecords) {
+  const lastPost = postReports[0] || null;
+  const lastReadiness = readinessReports[0] || null;
+  const currentSummary = summarizePlayerWeek(player.id, todayIso());
+  const previousSummary = summarizePlayerWeek(player.id, addDays(getWeekRange(todayIso()).start, -1));
+  const loadChange = calculateChangePercent(currentSummary.totalLoad, previousSummary.totalLoad);
+  const postSeries = buildPlayerPostSeries(player.id).slice(-14);
+  const readinessSeries = buildPlayerReadinessSeries(player.id).slice(-14);
+  const hydrationSeries = postSeries.filter((report) => report.hydration).map((report) => ({ ...report, hydrationLossPercent: report.hydration.lossPercent }));
+  const weeklyLoadSeries = buildWeeklyLoadSeries(player.id).slice(-8);
+  const enrichedGpsRecords = gpsRecords.map((record) => enrichPlayerGpsRecord(record));
+  const gpsFullRecords = getFullPeriodPreferred(enrichedGpsRecords).sort((a, b) => a.date.localeCompare(b.date));
+  const latestGps = enrichedGpsRecords[0] || null;
   const painHistory = buildPainHistory(player.id);
+  const latestPain = getLatestPlayerPainReport(player.id);
   const comments = [...postReports, ...readinessReports]
     .filter((report) => report.comments)
     .sort((a, b) => b.date.localeCompare(a.date))
-    .slice(0, 5);
-  const position = getPlayerPrimaryPosition(player.id) || "עמדה לא מוגדרת";
-  const trend = getLoadTrend(player.id);
-  const profileHydration = lastPost && lastPost.hydration ? hydrationBadge(lastPost.hydration) : `<span class="badge neutral">אין נתון</span>`;
-  const readinessStatus = lastReadiness ? readinessBadge(lastReadiness.readinessScore) : `<span class="badge yellow">אין דוח מוכנות</span>`;
-  const profileTabs = ["מוכנות", "עומסים", "GPS", "שינה", "כאבים", "הידרציה", "הערות מאמן"];
+    .slice(0, 8);
+  const context = {
+    player,
+    activeTab,
+    postReports,
+    readinessReports,
+    lastPost,
+    lastReadiness,
+    currentSummary,
+    previousSummary,
+    loadChange,
+    postSeries,
+    readinessSeries,
+    hydrationSeries,
+    weeklyLoadSeries,
+    gpsRecords: enrichedGpsRecords,
+    gpsFullRecords,
+    latestGps,
+    internalExternalSeries: buildInternalExternalSeries(player.id),
+    painHistory,
+    latestPain,
+    comments,
+    position: getPlayerPrimaryPosition(player.id) || "עמדה לא מוגדרת",
+    trend: getLoadTrend(player.id)
+  };
+  context.status = getCoachPlayerProfileStatus(context);
+  return context;
+}
 
-  const html = coachShell("dashboard", `
-    <section class="profile-hero surface">
+function renderCoachPlayerProfileHero(context) {
+  const latestDate = getCoachPlayerLatestDate(context);
+  const latestPainText = context.latestPain ? `${context.latestPain.painArea}${context.latestPain.painSide ? ` · ${context.latestPain.painSide}` : ""}` : "אין דיווח כאב";
+  const latestGpsText = context.latestGps ? (context.latestGps.riskFlags.length ? `לבדוק · ${context.latestGps.riskFlags[0]}` : "תקין") : "אין נתון";
+  return `
+    <section class="profile-hero profile-drilldown-hero surface">
       <div class="profile-identity">
         <span class="eyebrow">פרופיל שחקן</span>
-        <h2>${escapeHtml(player.name)}</h2>
-        <p>${escapeHtml(position)} · ${lastPost ? `דוח RPE אחרון: ${escapeHtml(formatDateDisplay(lastPost.date))}` : "אין דוח RPE"}</p>
+        <h2>${escapeHtml(context.player.name)}</h2>
+        <p>${escapeHtml(context.position)} · ${latestDate ? `דוח אחרון: ${escapeHtml(formatDateDisplay(latestDate))}` : "אין דוחות זמינים"}</p>
         <div class="profile-badges">
-          <span class="badge ${player.active ? "green" : "neutral"}">${player.active ? "פעיל" : "לא פעיל"}</span>
-          <span class="badge ${trend.tone}">${escapeHtml(trend.label)}</span>
-          ${readinessStatus}
-          ${profileHydration}
+          <span class="badge ${context.player.active ? "green" : "neutral"}">${context.player.active ? "פעיל" : "לא פעיל"}</span>
+          <span class="badge ${context.status.tone}">${escapeHtml(context.status.label)}</span>
+          <span class="badge ${context.trend.tone}">${escapeHtml(context.trend.label)}</span>
         </div>
       </div>
-      <div class="profile-status-strip">
+      <div class="profile-main-status ${context.status.tone}">
+        <span>סטטוס נוכחי</span>
+        <strong>${escapeHtml(context.status.label)}</strong>
+        <p>${escapeHtml(context.status.mainReason)}</p>
+      </div>
+      <div class="profile-status-strip compact">
         <div>
-          <span>מוכנות</span>
-          <strong>${lastReadiness ? escapeHtml(formatInteger(lastReadiness.readinessScore)) : "אין נתון"}</strong>
+          <span>מוכנות אחרונה</span>
+          <strong>${context.lastReadiness ? `${escapeHtml(formatInteger(context.lastReadiness.readinessScore))}/100` : "אין נתון"}</strong>
         </div>
         <div>
           <span>עומס שבועי</span>
-          <strong>${escapeHtml(formatInteger(currentSummary.totalLoad))}</strong>
+          <strong>${escapeHtml(formatInteger(context.currentSummary.totalLoad))}</strong>
         </div>
         <div>
-          <span>שינוי עומס</span>
-          <strong>${escapeHtml(formatPercent(change))}</strong>
+          <span>כאב אחרון</span>
+          <strong>${escapeHtml(latestPainText)}</strong>
         </div>
         <div>
           <span>הידרציה</span>
-          <strong>${lastPost && lastPost.hydration ? escapeHtml(lastPost.hydration.status) : "אין נתון"}</strong>
+          <strong>${context.lastPost && context.lastPost.hydration ? escapeHtml(context.lastPost.hydration.status) : "אין נתון"}</strong>
+        </div>
+        <div>
+          <span>GPS</span>
+          <strong>${escapeHtml(latestGpsText)}</strong>
         </div>
       </div>
       <a href="/coach/players" data-route class="btn secondary">חזרה לשחקנים</a>
     </section>
+  `;
+}
 
-    <nav class="profile-tabs" aria-label="אזורי פרופיל">
-      ${profileTabs.map((item) => `<a href="#${escapeAttr(item)}">${escapeHtml(item)}</a>`).join("")}
+function renderCoachPlayerProfileTabs(context) {
+  return `
+    <nav class="profile-tabs drilldown-tabs" aria-label="אזורי פרופיל">
+      ${getCoachPlayerProfileTabs().map((item) => `
+        <a href="/coach/player/${escapeAttr(context.player.id)}/${escapeAttr(item.id)}" data-route class="${context.activeTab === item.id ? "active" : ""}" aria-current="${context.activeTab === item.id ? "page" : "false"}">${escapeHtml(item.label)}</a>
+      `).join("")}
     </nav>
+  `;
+}
 
-    <section class="metric-grid">
-      ${metricCard("עומס שבועי", formatInteger(currentSummary.totalLoad), "יחידות עומס")}
-      ${metricCard("שבוע קודם", formatInteger(previousSummary.totalLoad), "יחידות עומס")}
-      ${metricCard("שינוי בעומס", formatPercent(change), "לעומת שבוע קודם")}
-      ${metricCard("מוכנות אחרונה", lastReadiness ? formatInteger(lastReadiness.readinessScore) : "אין נתון", "מתוך 100")}
-      ${metricCard("RPE ממוצע", formatNumber(currentSummary.avgRpe), "השבוע")}
-      ${metricCard("עייפות ממוצעת", formatNumber(currentSummary.avgFatigue), "אחרי אימון")}
-      ${metricCard("כאבי שריר", formatNumber(currentSummary.avgSoreness), "ממוצע")}
-      ${metricCard("שעות שינה", formatNumber(currentSummary.avgSleep), "ממוצע")}
-      ${metricCard("משקל לפני", lastPost && lastPost.hydration ? `${formatNumber(lastPost.hydration.preTrainingWeight)} ק\"ג` : "אין נתון", "דוח אחרון")}
-      ${metricCard("משקל אחרי", lastPost && lastPost.hydration ? `${formatNumber(lastPost.hydration.postTrainingWeight)} ק\"ג` : "אין נתון", "דוח אחרון")}
-      ${metricCard("ירידה במשקל", lastPost && lastPost.hydration ? `${formatNumber(lastPost.hydration.lossKg)} ק\"ג` : "אין נתון", lastPost && lastPost.hydration ? `${formatNumber(lastPost.hydration.lossPercent)}%` : "")}
-      ${metricCard("סטטוס הידרציה", lastPost && lastPost.hydration ? lastPost.hydration.status : "אין נתון", "דוח אחרון")}
-    </section>
-
-    <section class="charts-grid section">
-      ${chartCard("עומס יומי לאורך זמן", renderLineChart(postSeries, "trainingLoad", "עומס"))}
-      ${chartCard("עומס שבועי", renderLineChart(weeklyLoadSeries, "totalLoad", "עומס שבועי"))}
-      ${chartCard("RPE לאורך זמן", renderLineChart(postSeries, "rpe", "RPE"))}
-      ${chartCard("עייפות אחרי אימון", renderLineChart(postSeries, "fatigue", "עייפות"))}
-      ${chartCard("ציון מוכנות לאורך זמן", renderLineChart(readinessSeries, "readinessScore", "ציון מוכנות"))}
-      ${chartCard("שעות שינה", renderLineChart(readinessSeries, "sleepHours", "שינה"))}
-      ${chartCard("כאבי שריר", renderLineChart(readinessSeries, "soreness", "כאבי שריר"))}
-      ${chartCard("אובדן נוזלים %", renderLineChart(hydrationSeries, "hydrationLossPercent", "אובדן נוזלים"))}
-      <div class="surface chart-card">
-        <h3>היסטוריית כאב</h3>
-        ${renderPainHistory(painHistory)}
+function renderCoachPlayerProfileTabContent(context) {
+  const tab = getCoachPlayerProfileTabs().find((item) => item.id === context.activeTab) || getCoachPlayerProfileTabs()[0];
+  const renderers = {
+    readiness: renderCoachPlayerReadinessTab,
+    load: renderCoachPlayerLoadTab,
+    gps: renderCoachPlayerGpsTab,
+    sleep: renderCoachPlayerSleepTab,
+    pain: renderCoachPlayerPainTab,
+    hydration: renderCoachPlayerHydrationTab,
+    notes: renderCoachPlayerNotesTab
+  };
+  return `
+    <section class="section profile-tab-panel" data-profile-tab="${escapeAttr(tab.id)}">
+      <div class="section-title">
+        <h3>${escapeHtml(tab.label)}</h3>
+        <span>${escapeHtml(getCoachPlayerProfileTabSubtitle(context, tab.id))}</span>
       </div>
+      ${renderers[tab.id](context)}
     </section>
+  `;
+}
 
-    <section class="split section">
-      <div>
-        <div class="section-title">
-          <h3>הערות מאמן / הערות דוח</h3>
-          <span>${comments.length} הערות</span>
-        </div>
-        ${renderCommentsList(comments)}
-      </div>
+function getCoachPlayerProfileTabSubtitle(context, tab) {
+  if (tab === "readiness") return `${context.readinessReports.length} דוחות מוכנות`;
+  if (tab === "load") return `${context.postReports.length} דוחות RPE`;
+  if (tab === "gps") return `${context.gpsRecords.length} רשומות GPS`;
+  if (tab === "sleep") return "שינה ואיכות התאוששות";
+  if (tab === "pain") return context.latestPain ? `כאב אחרון: ${context.latestPain.painArea}` : "אין כאב פעיל";
+  if (tab === "hydration") return `${context.hydrationSeries.length} רשומות הידרציה`;
+  return `${context.comments.length} הערות שחקן`;
+}
+
+function renderCoachPlayerReadinessTab(context) {
+  const readinessComments = context.readinessReports.filter((report) => report.comments).slice(0, 5);
+  return `
+    <div class="profile-focus-grid">
+      ${profileFocusCard("ציון מוכנות אחרון", context.lastReadiness ? `${formatInteger(context.lastReadiness.readinessScore)}/100` : "אין נתון", context.lastReadiness ? getReadinessStatus(context.lastReadiness.readinessScore).label : "חסר דוח", context.lastReadiness ? getReadinessStatus(context.lastReadiness.readinessScore).tone : "yellow")}
+      ${profileFocusCard("סיבה מרכזית", context.status.mainReason, "לפי דוחות מוכנות/RPE/GPS", context.status.tone)}
+      ${profileFocusCard("מגמת עומס", context.trend.label, "לפי שבועות אחרונים", context.trend.tone)}
+    </div>
+    <div class="charts-grid section">
+      ${chartCard("מגמת מוכנות", renderLineChart(context.readinessSeries, "readinessScore", "ציון מוכנות"))}
+      ${chartCard("מגמת שינה", renderLineChart(context.readinessSeries, "sleepHours", "שעות שינה"))}
+      ${chartCard("אנרגיה / מוטיבציה", renderDualLineChart(context.readinessSeries, "energy", "mood", "אנרגיה", "מוטיבציה"))}
+      ${chartCard("כאבי שריר", renderLineChart(context.readinessSeries, "soreness", "כאבי שריר"))}
+    </div>
+    <div class="split section">
       <div>
         <div class="section-title">
           <h3>דוח מוכנות אחרון</h3>
-          <span>${lastReadiness ? escapeHtml(formatDateDisplay(lastReadiness.date)) : "אין"}</span>
+          <span>${context.lastReadiness ? escapeHtml(formatDateDisplay(context.lastReadiness.date)) : "אין"}</span>
         </div>
-        ${lastReadiness ? renderReadinessCard(lastReadiness) : `<div class="surface empty">אין דוח מוכנות</div>`}
+        ${context.lastReadiness ? renderReadinessCard(context.lastReadiness) : `<div class="surface empty">אין דוח מוכנות</div>`}
       </div>
+      <div>
+        <div class="section-title">
+          <h3>הערות שחקן מהדוחות</h3>
+          <span>${readinessComments.length} הערות</span>
+        </div>
+        ${renderCommentsList(readinessComments)}
+      </div>
+    </div>
+  `;
+}
+
+function renderCoachPlayerLoadTab(context) {
+  const highRpe = context.postReports.filter((report) => report.rpe >= state.settings.rpeHigh);
+  return `
+    <div class="profile-focus-grid">
+      ${profileFocusCard("עומס שבועי", formatInteger(context.currentSummary.totalLoad), "יחידות עומס", "neutral")}
+      ${profileFocusCard("שבוע קודם", formatInteger(context.previousSummary.totalLoad), "יחידות עומס", "neutral")}
+      ${profileFocusCard("שינוי בעומס", formatPercent(context.loadChange), "לעומת שבוע קודם", getWeeklyLoadRisk(context.loadChange).tone)}
+      ${profileFocusCard("RPE ממוצע", formatNumber(context.currentSummary.avgRpe), "השבוע", average(context.postReports.slice(0, 3).map((report) => report.rpe)) >= state.settings.rpeHigh ? "yellow" : "green")}
+    </div>
+    <div class="charts-grid section">
+      ${chartCard("עומס שבועי פנימי", renderLineChart(context.weeklyLoadSeries, "totalLoad", "עומס שבועי"))}
+      ${chartCard("עומס יומי", renderLineChart(context.postSeries, "trainingLoad", "עומס"))}
+      ${chartCard("RPE לאורך זמן", renderLineChart(context.postSeries, "rpe", "RPE"))}
+    </div>
+    <div class="section">
+      <div class="section-title">
+        <h3>התראות RPE גבוה</h3>
+        <span>${highRpe.length} התראות</span>
+      </div>
+      ${renderCoachProfileAlertList(highRpe.map((report) => ({
+        title: formatDateDisplay(report.date),
+        detail: `RPE ${report.rpe} · עומס ${formatInteger(report.trainingLoad)} · ${report.comments || "אין הערה"}`
+      })), "אין התראות RPE גבוה")}
+    </div>
+    <div class="section">
+      <div class="section-title">
+        <h3>טבלת עומסים</h3>
+        <span>${context.postReports.length} דוחות</span>
+      </div>
+      ${renderReportsTable(context.postReports, true)}
+    </div>
+  `;
+}
+
+function renderCoachPlayerGpsTab(context) {
+  const metrics = getCoachGpsMetricDefinitions();
+  const selected = metrics[0];
+  return `
+    <div class="surface coach-gps-filter-panel">
+      <div>
+        <span class="field-label">סוג פעילות</span>
+        <div class="player-filter-row" aria-label="סוג פעילות GPS">
+          ${[
+            ["all", "הכל"],
+            ["training", "אימונים"],
+            ["match", "משחקים"]
+          ].map(([value, label], index) => `<button class="${index === 0 ? "is-active" : ""}" type="button" data-coach-profile-gps-activity="${escapeAttr(value)}">${escapeHtml(label)}</button>`).join("")}
+        </div>
+      </div>
+      <div>
+        <span class="field-label">תקופה</span>
+        <div id="coachProfileGpsPeriods" class="player-filter-row" aria-label="תקופת GPS">
+          ${renderCoachGpsPeriodButtons("all")}
+        </div>
+      </div>
+      <div>
+        <span class="field-label">מדד לגרף</span>
+        <div class="player-filter-row metric-row" aria-label="בחירת מדד GPS">
+          ${metrics.map((metric, index) => `<button class="${index === 0 ? "is-active" : ""}" type="button" data-coach-profile-gps-metric="${escapeAttr(metric.key)}">${escapeHtml(metric.label)}</button>`).join("")}
+        </div>
+      </div>
+    </div>
+
+    <div id="coachProfileGpsDynamic">
+      ${renderCoachProfileGpsDynamic(context, "all", "latest", selected.key)}
+    </div>
+  `;
+}
+
+function renderCoachGpsPeriodButtons(activity) {
+  return getPlayerGpsPeriodOptions(activity)
+    .map((option, index) => `<button class="${index === 0 ? "is-active" : ""}" type="button" data-coach-profile-gps-period="${escapeAttr(option.value)}">${escapeHtml(option.label)}</button>`)
+    .join("");
+}
+
+function renderCoachProfileGpsDynamic(context, activity, period, metricKey) {
+  const metrics = getCoachGpsMetricDefinitions();
+  const metric = metrics.find((item) => item.key === metricKey) || metrics[0];
+  const records = getPlayerGpsRecordsForProfile(context.player.id, activity, period);
+  const seasonRecords = getPlayerGpsRecordsForProfile(context.player.id, activity, "season");
+  const latest = records[0] || null;
+  const gpsAlerts = records.filter((record) => record.riskFlags.length);
+  const lastTitle = getCoachGpsLastActivityTitle(activity);
+  return `
+    ${latest ? renderCoachGpsLastActivity(latest, lastTitle) : `<div class="surface empty">אין נתוני GPS לסינון שנבחר</div>`}
+
+    <div class="player-kpi-grid coach-gps-kpi-grid">
+      ${renderCoachGpsMetricCards(records, seasonRecords, metrics)}
+    </div>
+
+    <div class="surface profile-chart-selector section">
+      ${renderCoachProfileGpsChart(records, metric.key)}
+    </div>
+
+    <section class="section">
+      <div class="section-title">
+        <h3>שיאים אישיים</h3>
+        <span>${escapeHtml(getCoachGpsActivityLabel(activity))}</span>
+      </div>
+      ${renderCoachGpsPersonalRecords(seasonRecords, metrics)}
     </section>
 
     <section class="section">
+      <div class="section-title">
+        <h3>תובנות GPS למאמן</h3>
+        <span>${records.length} רשומות בסינון</span>
+      </div>
+      ${renderCoachGpsInsights(records, seasonRecords, metric)}
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <h3>התראות GPS</h3>
+        <span>${gpsAlerts.length} התראות</span>
+      </div>
+      ${renderCoachProfileAlertList(gpsAlerts.map((record) => ({
+        title: `${formatDateDisplay(record.date)} · ${record.sessionName}`,
+        detail: record.riskFlags.join(", ")
+      })), "אין התראות GPS בסינון שנבחר")}
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <h3>היסטוריית GPS</h3>
+        <span>${records.length} רשומות</span>
+      </div>
+      ${renderPlayerGpsTable(records)}
+    </section>
+  `;
+}
+
+function renderCoachGpsLastActivity(record, title) {
+  return `
+    <article class="player-last-session coach-gps-last-card">
+      <div>
+        <span class="eyebrow">${escapeHtml(title)}</span>
+        <h3>${escapeHtml(record.sessionName || "פעילות GPS")}</h3>
+        <p>${escapeHtml(formatDateDisplay(record.date))}${record.position ? ` · ${escapeHtml(record.position)}` : ""}</p>
+      </div>
+      <div class="player-last-session-grid">
+        ${playerGpsValue("Distance", formatGpsMetricDisplay({ key: "totalDistance" }, record.totalDistance), "")}
+        ${playerGpsValue("HSR", formatGpsMetricDisplay({ key: "highSpeedRunning" }, record.highSpeedRunning), "")}
+        ${playerGpsValue("Sprint Distance", formatGpsMetricDisplay({ key: "sprintDistance" }, record.sprintDistance), "")}
+        ${playerGpsValue("Number of Sprints", formatGpsMetricDisplay({ key: "sprintCount" }, record.sprintCount), "")}
+        ${playerGpsValue("Max Speed", formatGpsMetricDisplay({ key: "maxSpeed" }, record.maxSpeed), "")}
+      </div>
+    </article>
+  `;
+}
+
+function getCoachGpsLastActivityTitle(activity) {
+  if (activity === "match") return "משחק אחרון";
+  if (activity === "training") return "אימון אחרון";
+  return "פעילות GPS אחרונה";
+}
+
+function renderCoachGpsMetricCards(records, seasonRecords, metrics) {
+  return metrics.map((metric) => {
+    const selectedValue = getPlayerGpsKpiValue(records, metric);
+    const seasonAverage = average(seasonRecords.map((record) => record[metric.key]));
+    const best = getCoachGpsBestRecord(seasonRecords, metric);
+    const percentOfBest = selectedValue !== null && best && Number(best[metric.key]) ? Math.round((Number(selectedValue) / Number(best[metric.key])) * 100) : null;
+    return `
+      <article class="game-metric-card coach-gps-metric-card">
+        <span>${escapeHtml(metric.label)}</span>
+        <strong>${escapeHtml(formatGpsMetricDisplay(metric, selectedValue))}</strong>
+        <div class="game-metric-detail">
+          <small>ממוצע עונה:</small>
+          <b>${escapeHtml(formatGpsMetricDisplay(metric, seasonAverage))}</b>
+        </div>
+        <p>${percentOfBest === null ? "אין מספיק נתונים לשיא אישי" : `${escapeHtml(formatInteger(percentOfBest))}% מהשיא האישי`}</p>
+      </article>
+    `;
+  }).join("");
+}
+
+function renderCoachProfileGpsChart(records, metricKey) {
+  const metric = getCoachGpsMetricDefinitions().find((item) => item.key === metricKey) || getCoachGpsMetricDefinitions()[0];
+  return `
+    <div class="player-chart-card">
+      <h3>${escapeHtml(metric.label)}</h3>
+      ${renderLineChart([...records].reverse(), metric.key, metric.label)}
+      <p class="player-trend-text">${escapeHtml(getCoachGpsTrendInsight(records, metric))}</p>
+    </div>
+  `;
+}
+
+function renderCoachGpsPersonalRecords(records, metrics) {
+  if (!records.length) return `<div class="surface empty">אין נתוני GPS להצגת שיאים</div>`;
+  const ordered = [
+    metrics.find((metric) => metric.key === "maxSpeed"),
+    metrics.find((metric) => metric.key === "totalDistance"),
+    metrics.find((metric) => metric.key === "highSpeedRunning"),
+    metrics.find((metric) => metric.key === "sprintDistance"),
+    metrics.find((metric) => metric.key === "sprintCount")
+  ].filter(Boolean);
+  return `
+    <div class="personal-record-grid">
+      ${ordered.map((metric) => {
+        const best = getCoachGpsBestRecord(records, metric);
+        return `
+          <article class="record-card">
+            <span>${escapeHtml(metric.label)}</span>
+            <strong>${best ? escapeHtml(formatGpsMetricDisplay(metric, best[metric.key])) : "אין נתון"}</strong>
+            <p>${best ? `${escapeHtml(formatDateDisplay(best.date))} · ${escapeHtml(best.sessionName || "GPS")}` : "אין רשומות"}</p>
+          </article>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function renderCoachGpsInsights(records, seasonRecords, metric) {
+  const insights = getCoachGpsInsights(records, seasonRecords, metric);
+  return `
+    <div class="surface coach-gps-insight-list">
+      ${insights.map((item) => `<p>${escapeHtml(item)}</p>`).join("")}
+    </div>
+  `;
+}
+
+function getCoachGpsInsights(records, seasonRecords, metric) {
+  const insights = [getCoachGpsTrendInsight(records, metric)];
+  const selectedHsr = getPlayerGpsKpiValue(records, { key: "highSpeedRunning" });
+  const seasonHsr = average(seasonRecords.map((record) => record.highSpeedRunning));
+  if (selectedHsr !== null && seasonHsr && selectedHsr > seasonHsr * 1.15) {
+    insights.push("עומס HSR גבוה ביחס לממוצע העונתי.");
+  }
+  const selectedSprintDistance = getPlayerGpsKpiValue(records, { key: "sprintDistance" });
+  const seasonSprintDistance = average(seasonRecords.map((record) => record.sprintDistance));
+  if (selectedSprintDistance !== null && seasonSprintDistance && selectedSprintDistance > seasonSprintDistance * 1.15) {
+    insights.push("מרחק הספרינט גבוה ביחס לממוצע העונתי.");
+  }
+  const selectedMaxSpeed = getPlayerGpsKpiValue(records, { key: "maxSpeed" });
+  const seasonMaxSpeed = average(seasonRecords.map((record) => record.maxSpeed));
+  if (selectedMaxSpeed !== null && seasonMaxSpeed && selectedMaxSpeed > seasonMaxSpeed * 1.03) {
+    insights.push("המהירות המרבית מעל הממוצע העונתי של השחקן.");
+  }
+  return unique(insights).slice(0, 3);
+}
+
+function getCoachGpsTrendInsight(records, metric) {
+  if (records.length < 4) return "אין מספיק נתונים להצגת מגמה.";
+  const ordered = [...records].reverse();
+  const half = Math.floor(ordered.length / 2);
+  const previous = ordered.slice(0, half);
+  const recent = ordered.slice(half);
+  const previousValue = getPlayerGpsKpiValue(previous, metric);
+  const recentValue = getPlayerGpsKpiValue(recent, metric);
+  if (!previousValue || recentValue === null) return "אין מספיק נתונים להצגת מגמה.";
+  const change = calculateChangePercent(recentValue, previousValue);
+  if (change === null || Math.abs(change) < 5) return `${metric.coachTrendLabel} יציב בתקופה שנבחרה.`;
+  if (change > 0) return `השחקן מציג עלייה ב${metric.coachTrendName} ביחס לתקופה הקודמת.`;
+  return `${metric.coachTrendLabel} ירד ביחס לתקופה הקודמת.`;
+}
+
+function getCoachGpsBestRecord(records, metric) {
+  return records
+    .filter((record) => Number.isFinite(Number(record[metric.key])))
+    .sort((a, b) => Number(b[metric.key]) - Number(a[metric.key]))[0] || null;
+}
+
+function getCoachGpsMetricDefinitions() {
+  return [
+    { key: "totalDistance", label: "Distance", coachTrendName: "מרחק", coachTrendLabel: "המרחק" },
+    { key: "highSpeedRunning", label: "HSR", coachTrendName: "HSR", coachTrendLabel: "ה-HSR" },
+    { key: "sprintDistance", label: "Sprint Distance", coachTrendName: "מרחק ספרינט", coachTrendLabel: "מרחק הספרינט" },
+    { key: "sprintCount", label: "Sprints", coachTrendName: "מספר ספרינטים", coachTrendLabel: "מספר הספרינטים" },
+    { key: "maxSpeed", label: "Max Speed", coachTrendName: "מהירות", coachTrendLabel: "המהירות" }
+  ];
+}
+
+function getCoachGpsActivityLabel(activity) {
+  if (activity === "match") return "משחקים";
+  if (activity === "training") return "אימונים";
+  return "כל הפעילויות";
+}
+
+function renderCoachPlayerSleepTab(context) {
+  const lowSleep = context.readinessReports.filter((report) => report.sleepHours < state.settings.sleepHoursLow || report.sleepQuality <= 2);
+  return `
+    <div class="profile-focus-grid">
+      ${profileFocusCard("שינה ממוצעת", formatNumber(context.currentSummary.avgSleep), "שעות השבוע", context.currentSummary.avgSleep && context.currentSummary.avgSleep < state.settings.sleepHoursLow ? "yellow" : "green")}
+      ${profileFocusCard("איכות שינה ממוצעת", formatNumber(context.currentSummary.avgSleepQuality), "1-5", context.currentSummary.avgSleepQuality && context.currentSummary.avgSleepQuality <= 2 ? "yellow" : "green")}
+      ${profileFocusCard("דוחות שינה נמוכה", lowSleep.length, "היסטוריה זמינה", lowSleep.length ? "yellow" : "green")}
+    </div>
+    <div class="charts-grid section">
+      ${chartCard("שעות שינה", renderLineChart(context.readinessSeries, "sleepHours", "שעות שינה"))}
+      ${chartCard("איכות שינה", renderLineChart(context.readinessSeries, "sleepQuality", "איכות שינה"))}
+    </div>
+    <div class="section">
+      <div class="section-title">
+        <h3>התראות שינה נמוכה</h3>
+        <span>${lowSleep.length} התראות</span>
+      </div>
+      ${renderCoachProfileAlertList(lowSleep.map((report) => ({
+        title: formatDateDisplay(report.date),
+        detail: `${formatNumber(report.sleepHours)} שעות · איכות ${report.sleepQuality}/5`
+      })), "אין התראות שינה נמוכה")}
+    </div>
+  `;
+}
+
+function renderCoachPlayerPainTab(context) {
+  const painReports = [...context.postReports, ...context.readinessReports]
+    .filter((report) => report.painArea && report.painArea !== NO_PAIN)
+    .sort((a, b) => b.date.localeCompare(a.date));
+  const repeatedPain = context.painHistory.filter((item) => item.count >= 2);
+  return `
+    <div class="profile-focus-grid">
+      ${profileFocusCard("כאב אחרון", context.latestPain ? context.latestPain.painArea : "אין", context.latestPain ? formatDateDisplay(context.latestPain.date) : "אין דיווח", context.latestPain ? "yellow" : "green")}
+      ${profileFocusCard("צד", context.latestPain && context.latestPain.painSide ? context.latestPain.painSide : "אין נתון", "אם דווח בדוח מוכנות", "neutral")}
+      ${profileFocusCard("עוצמת כאב", context.latestPain && context.latestPain.painIntensity ? `${formatInteger(context.latestPain.painIntensity)}/10` : "אין נתון", "אם דווח", context.latestPain && context.latestPain.painIntensity >= 6 ? "red" : "neutral")}
+      ${profileFocusCard("כאבים חוזרים", repeatedPain.length, "אזורים עם 2+ דיווחים", repeatedPain.length ? "yellow" : "green")}
+    </div>
+    <div class="split section">
+      <div>
+        <div class="section-title">
+          <h3>היסטוריית כאב</h3>
+          <span>${context.painHistory.length} אזורים</span>
+        </div>
+        <div class="surface">${renderPainHistory(context.painHistory)}</div>
+      </div>
+      <div>
+        <div class="section-title">
+          <h3>כאבים חוזרים</h3>
+          <span>${repeatedPain.length} התראות</span>
+        </div>
+        ${renderCoachProfileAlertList(repeatedPain.map((item) => ({
+          title: item.area,
+          detail: `${item.count} דיווחים בהיסטוריה`
+        })), "אין כאבים חוזרים")}
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-title">
+        <h3>דיווחי כאב לפי תאריך</h3>
+        <span>${painReports.length} דיווחים</span>
+      </div>
+      ${renderCoachPainReportsTable(painReports)}
+    </div>
+  `;
+}
+
+function renderCoachPlayerHydrationTab(context) {
+  const latest = context.lastPost && context.lastPost.hydration ? context.lastPost.hydration : null;
+  const hydrationAlerts = context.postReports.filter((report) => report.hydration && report.hydration.tone !== "green");
+  return `
+    <div class="profile-focus-grid">
+      ${profileFocusCard("משקל לפני", latest ? `${formatNumber(latest.preTrainingWeight)} ק״ג` : "אין נתון", "דוח אחרון", "neutral")}
+      ${profileFocusCard("משקל אחרי", latest ? `${formatNumber(latest.postTrainingWeight)} ק״ג` : "אין נתון", "דוח אחרון", "neutral")}
+      ${profileFocusCard("איבוד נוזלים", latest ? `${formatNumber(latest.lossPercent)}%` : "אין נתון", latest ? `${formatNumber(latest.lossKg)} ק״ג` : "", latest ? latest.tone : "neutral")}
+      ${profileFocusCard("סטטוס הידרציה", latest ? latest.status : "אין נתון", "דוח אחרון", latest ? latest.tone : "neutral")}
+    </div>
+    <div class="charts-grid section">
+      ${chartCard("מגמת הידרציה", renderLineChart(context.hydrationSeries, "hydrationLossPercent", "אובדן נוזלים %"))}
+    </div>
+    <div class="section">
+      <div class="section-title">
+        <h3>התראות הידרציה</h3>
+        <span>${hydrationAlerts.length} התראות</span>
+      </div>
+      ${renderCoachProfileAlertList(hydrationAlerts.map((report) => ({
+        title: formatDateDisplay(report.date),
+        detail: `${report.hydration.status} · ${formatNumber(report.hydration.lossPercent)}% · ${formatNumber(report.hydration.lossKg)} ק״ג`
+      })), "אין התראות הידרציה")}
+    </div>
+    <div class="section">
       <div class="section-title">
         <h3>היסטוריית הידרציה</h3>
-        <span>${hydrationSeries.length} רשומות</span>
+        <span>${context.hydrationSeries.length} רשומות</span>
       </div>
-      ${renderHydrationHistory(hydrationSeries)}
-    </section>
+      ${renderHydrationHistory(context.hydrationSeries)}
+    </div>
+  `;
+}
 
-    <section class="section">
+function renderCoachPlayerNotesTab(context) {
+  return `
+    <div class="section">
       <div class="section-title">
-        <h3>GPS</h3>
-        <span>${gpsRecords.length} רשומות</span>
+        <h3>הערות שחקן מהדוחות</h3>
+        <span>${context.comments.length} הערות</span>
       </div>
-      ${renderPlayerGpsTable(gpsRecords)}
-    </section>
+      ${renderCommentsList(context.comments)}
+    </div>
+  `;
+}
 
-    <section class="charts-grid section">
-      ${chartCard("GPS - מרחק כולל", renderLineChart(gpsFullRecords, "totalDistance", "מרחק כולל"))}
-      ${chartCard("GPS - HSR", renderLineChart(gpsFullRecords, "highSpeedRunning", "HSR"))}
-      ${chartCard("GPS - מעל 25 קמ״ש", renderLineChart(gpsFullRecords, "distanceAbove25", "מעל 25"))}
-      ${chartCard("GPS - מהירות מקסימלית", renderLineChart(gpsFullRecords, "maxSpeed", "מהירות"))}
-      ${chartCard("האצות והאטות", renderDualLineChart(gpsFullRecords, "accelerations", "decelerations", "האצות", "האטות"))}
-      ${chartCard("עומס פנימי מול חיצוני", renderDualLineChart(internalExternalSeries, "internalLoad", "gpsLoad", "עומס RPE", "עומס GPS"))}
-    </section>
+function bindCoachPlayerProfile(context) {
+  if (context.activeTab !== "gps") return;
+  const dynamic = document.getElementById("coachProfileGpsDynamic");
+  const periodRow = document.getElementById("coachProfileGpsPeriods");
+  if (!dynamic) return;
+  const gpsState = {
+    activity: "all",
+    period: "latest",
+    metric: "totalDistance"
+  };
+  const rerender = () => {
+    dynamic.innerHTML = renderCoachProfileGpsDynamic(context, gpsState.activity, gpsState.period, gpsState.metric);
+  };
+  const bindPeriodButtons = () => {
+    document.querySelectorAll("[data-coach-profile-gps-period]").forEach((button) => {
+      button.addEventListener("click", () => {
+        gpsState.period = button.getAttribute("data-coach-profile-gps-period") || "latest";
+        document.querySelectorAll("[data-coach-profile-gps-period]").forEach((item) => item.classList.toggle("is-active", item === button));
+        rerender();
+      });
+    });
+  };
+  document.querySelectorAll("[data-coach-profile-gps-activity]").forEach((button) => {
+    button.addEventListener("click", () => {
+      gpsState.activity = button.getAttribute("data-coach-profile-gps-activity") || "all";
+      const firstPeriod = getPlayerGpsPeriodOptions(gpsState.activity)[0];
+      gpsState.period = firstPeriod ? firstPeriod.value : "latest";
+      document.querySelectorAll("[data-coach-profile-gps-activity]").forEach((item) => item.classList.toggle("is-active", item === button));
+      if (periodRow) {
+        periodRow.innerHTML = renderCoachGpsPeriodButtons(gpsState.activity);
+        bindPeriodButtons();
+      }
+      rerender();
+    });
+  });
+  document.querySelectorAll("[data-coach-profile-gps-metric]").forEach((button) => {
+    button.addEventListener("click", () => {
+      gpsState.metric = button.getAttribute("data-coach-profile-gps-metric") || "totalDistance";
+      document.querySelectorAll("[data-coach-profile-gps-metric]").forEach((item) => item.classList.toggle("is-active", item === button));
+      rerender();
+    });
+  });
+  bindPeriodButtons();
+}
 
-    <section class="section">
-      <div class="section-title">
-        <h3>השוואה לממוצעים</h3>
-        <span>שחקן מול עצמו ומול עמדה</span>
-      </div>
-      ${renderGpsAverageComparison(player.id, gpsFullRecords)}
-    </section>
+function getCoachPlayerProfileStatus(context) {
+  const reasons = [];
+  let severity = 0;
+  if (!context.lastReadiness) {
+    severity = Math.max(severity, 1);
+    reasons.push("אין דוח מוכנות אחרון");
+  } else if (context.lastReadiness.readinessScore < 60) {
+    severity = 2;
+    reasons.push(`מוכנות נמוכה ${context.lastReadiness.readinessScore}`);
+  } else if (context.lastReadiness.readinessScore < 80) {
+    severity = Math.max(severity, 1);
+    reasons.push(`מוכנות למעקב ${context.lastReadiness.readinessScore}`);
+  }
+  if (context.lastPost && context.lastPost.rpe >= 9) {
+    severity = 2;
+    reasons.push(`RPE ${context.lastPost.rpe}`);
+  } else if (context.lastPost && context.lastPost.rpe >= state.settings.rpeHigh) {
+    severity = Math.max(severity, 1);
+    reasons.push(`RPE ${context.lastPost.rpe}`);
+  }
+  if (context.latestPain) {
+    severity = Math.max(severity, context.latestPain.painIntensity >= 8 ? 2 : 1);
+    reasons.push(`כאב ב${context.latestPain.painArea}`);
+  }
+  if (context.lastPost && context.lastPost.hydration && context.lastPost.hydration.tone === "red") {
+    severity = 2;
+    reasons.push(context.lastPost.hydration.status);
+  } else if (context.lastPost && context.lastPost.hydration && context.lastPost.hydration.tone === "yellow") {
+    severity = Math.max(severity, 1);
+    reasons.push(context.lastPost.hydration.status);
+  }
+  const weeklyRisk = getWeeklyLoadRisk(context.loadChange);
+  if (weeklyRisk.tone === "red") {
+    severity = 2;
+    reasons.push(weeklyRisk.label);
+  } else if (weeklyRisk.tone === "yellow") {
+    severity = Math.max(severity, 1);
+    reasons.push(weeklyRisk.label);
+  }
+  if (context.latestGps && context.latestGps.riskFlags.length) {
+    severity = 2;
+    reasons.push(context.latestGps.riskFlags[0]);
+  }
+  if (severity >= 2) return { label: "🔴 בדיקה", tone: "red", mainReason: unique(reasons)[0] || "דורש בדיקה", reasons: unique(reasons) };
+  if (severity === 1) return { label: "🟡 מעקב", tone: "yellow", mainReason: unique(reasons)[0] || "דורש מעקב", reasons: unique(reasons) };
+  return { label: "🟢 תקין", tone: "green", mainReason: "אין חריגים מרכזיים בדוחות האחרונים", reasons: [] };
+}
 
-    <section class="section">
-      <div class="section-title">
-        <h3>כל דוחות RPE</h3>
-        <span>${postReports.length} רשומות</span>
-      </div>
-      ${renderReportsTable(postReports, true)}
-    </section>
+function getCoachPlayerLatestDate(context) {
+  return [context.lastReadiness && context.lastReadiness.date, context.lastPost && context.lastPost.date, context.latestGps && context.latestGps.date]
+    .filter(Boolean)
+    .sort((a, b) => b.localeCompare(a))[0] || "";
+}
 
-    <section class="section">
-      <div class="section-title">
-        <h3>כל דוחות המוכנות</h3>
-        <span>${readinessReports.length} רשומות</span>
-      </div>
-      ${renderReadinessTable(readinessReports)}
-    </section>
-  `);
+function profileFocusCard(label, value, note, tone = "neutral") {
+  return `
+    <article class="profile-focus-card ${escapeAttr(tone)}">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+      ${note ? `<small>${escapeHtml(note)}</small>` : ""}
+    </article>
+  `;
+}
 
-  mount(html);
+function renderCoachProfileAlertList(items, emptyText) {
+  if (!items.length) return `<div class="surface empty">${escapeHtml(emptyText)}</div>`;
+  return `
+    <div class="surface mini-list">
+      ${items.map((item) => `
+        <div class="mini-row">
+          <span>${escapeHtml(item.title)}</span>
+          <strong>${escapeHtml(item.detail)}</strong>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderCoachPainReportsTable(reports) {
+  if (!reports.length) return `<div class="surface empty">אין דיווחי כאב</div>`;
+  return `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>תאריך</th>
+            <th>סוג דוח</th>
+            <th>אזור כאב</th>
+            <th>צד</th>
+            <th>עוצמה</th>
+            <th>הערה</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${reports.map((report) => `
+            <tr>
+              <td>${escapeHtml(formatDateDisplay(report.date))}</td>
+              <td>${report.rpe !== undefined ? "דוח RPE" : "דוח מוכנות"}</td>
+              <td>${escapeHtml(report.detailedPainArea || report.painArea)}</td>
+              <td>${escapeHtml(report.painSide || "אין נתון")}</td>
+              <td>${escapeHtml(report.painIntensity ? `${formatInteger(report.painIntensity)}/10` : "אין נתון")}</td>
+              <td>${escapeHtml(report.comments || "אין")}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
 }
 
 function renderSessionsPage() {
@@ -2329,6 +4874,471 @@ function bindSessionsPage() {
   });
 }
 
+function renderCalendarPage() {
+  const calendar = uiState.calendar;
+  const activePlayers = getActivePlayers();
+  const range = calendar.view === "week" ? getWeekRange(calendar.anchorDate) : getCalendarMonthGridRange(calendar.anchorDate);
+  const days = getDateRangeList(range.start, range.end).map((date) => buildCalendarDaySummary(date, activePlayers));
+  const selectedDate = calendar.selectedDate || todayIso();
+  const selectedDay = buildCalendarDaySummary(selectedDate, activePlayers);
+  const html = coachShell("calendar", `
+    <div class="page-header premium-header">
+      <div>
+        <span class="eyebrow">מרכז צוות מקצועי</span>
+        <h2>לוח שנה</h2>
+        <p>תצוגת פעילות, GPS, דוחות יומיים והתראות לפי יום</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn secondary" type="button" data-calendar-shift="-1">הקודם</button>
+        <button class="btn primary" type="button" data-calendar-today>היום</button>
+        <button class="btn secondary" type="button" data-calendar-shift="1">הבא</button>
+      </div>
+    </div>
+
+    <section class="surface calendar-toolbar">
+      <div>
+        <span class="eyebrow">${calendar.view === "week" ? "שבוע" : "חודש"}</span>
+        <h3>${escapeHtml(getCalendarTitle(calendar.anchorDate, calendar.view))}</h3>
+      </div>
+      <div class="calendar-control-stack">
+        <div class="calendar-segment" aria-label="בחירת תצוגה">
+          <button type="button" class="${calendar.view === "month" ? "active" : ""}" data-calendar-view="month">חודשי</button>
+          <button type="button" class="${calendar.view === "week" ? "active" : ""}" data-calendar-view="week">שבועי</button>
+        </div>
+        <div class="calendar-filter-row" aria-label="סינון לוח שנה">
+          ${getCalendarFilters().map((item) => `<button type="button" class="${calendar.filter === item.id ? "active" : ""}" data-calendar-filter="${escapeAttr(item.id)}">${escapeHtml(item.label)}</button>`).join("")}
+        </div>
+      </div>
+    </section>
+
+    <section class="calendar-layout">
+      <div class="surface calendar-board">
+        <div class="calendar-weekdays">
+          ${["א׳", "ב׳", "ג׳", "ד׳", "ה׳", "ו׳", "ש׳"].map((day) => `<span>${day}</span>`).join("")}
+        </div>
+        <div class="calendar-grid ${calendar.view === "week" ? "week-view" : ""}">
+          ${days.map((day) => renderCalendarDayCell(day, calendar)).join("")}
+        </div>
+      </div>
+      ${renderCalendarDayPanel(selectedDay)}
+    </section>
+  `);
+
+  mount(html, bindCalendarPage);
+}
+
+function bindCalendarPage() {
+  document.querySelectorAll("[data-calendar-view]").forEach((button) => {
+    button.addEventListener("click", () => {
+      uiState.calendar.view = button.getAttribute("data-calendar-view") || "month";
+      uiState.calendar.popoverDate = "";
+      renderCalendarPage();
+    });
+  });
+  document.querySelectorAll("[data-calendar-filter]").forEach((button) => {
+    button.addEventListener("click", () => {
+      uiState.calendar.filter = button.getAttribute("data-calendar-filter") || "all";
+      uiState.calendar.popoverDate = "";
+      renderCalendarPage();
+    });
+  });
+  document.querySelectorAll("[data-calendar-day]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const date = button.getAttribute("data-calendar-day") || todayIso();
+      uiState.calendar.selectedDate = date;
+      uiState.calendar.popoverDate = isCalendarMobilePopoverMode() ? date : "";
+      renderCalendarPage();
+    });
+  });
+  document.querySelectorAll("[data-calendar-shift]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const direction = Number(button.getAttribute("data-calendar-shift")) || 0;
+      uiState.calendar.anchorDate = shiftCalendarAnchor(uiState.calendar.anchorDate, uiState.calendar.view, direction);
+      uiState.calendar.selectedDate = uiState.calendar.anchorDate;
+      uiState.calendar.popoverDate = "";
+      renderCalendarPage();
+    });
+  });
+  const todayButton = document.querySelector("[data-calendar-today]");
+  if (todayButton) {
+    todayButton.addEventListener("click", () => {
+      uiState.calendar.anchorDate = todayIso();
+      uiState.calendar.selectedDate = todayIso();
+      uiState.calendar.popoverDate = "";
+      renderCalendarPage();
+    });
+  }
+  if (uiState.calendar.popoverDate && isCalendarMobilePopoverMode()) {
+    window.setTimeout(() => {
+      document.addEventListener("click", closeCalendarMobilePopoverOnOutsideTap, { once: true });
+    }, 0);
+  }
+  document.querySelectorAll("[data-calendar-plan-form]").forEach((form) => {
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const data = new FormData(form);
+      const date = form.getAttribute("data-calendar-plan-form") || uiState.calendar.selectedDate || todayIso();
+      saveCalendarLoadPlan(date, data.get("plannedGpsLoad"), data.get("plannedRpeLoad"));
+      renderCalendarPage();
+    });
+  });
+}
+
+function isCalendarMobilePopoverMode() {
+  return window.matchMedia("(max-width: 680px), (hover: none)").matches;
+}
+
+function closeCalendarMobilePopoverOnOutsideTap(event) {
+  if (!uiState.calendar.popoverDate) return;
+  if (event.target && event.target.closest && event.target.closest(".calendar-day.popover-open")) {
+    document.addEventListener("click", closeCalendarMobilePopoverOnOutsideTap, { once: true });
+    return;
+  }
+  uiState.calendar.popoverDate = "";
+  renderCalendarPage();
+}
+
+function getCalendarFilters() {
+  return [
+    { id: "all", label: "הכל" },
+    { id: "training", label: "אימונים" },
+    { id: "matches", label: "משחקים" },
+    { id: "gps", label: "GPS" },
+    { id: "reports", label: "דוחות" },
+    { id: "alerts", label: "התראות" }
+  ];
+}
+
+function buildCalendarDaySummary(date, activePlayers) {
+  const gpsSessions = state.gpsSessions.filter((sessionItem) => sessionItem.date === date);
+  const gpsRecords = state.gpsRecords.map(getComputedGpsRecord).filter((record) => record.date === date);
+  const readinessReports = state.readinessReports.filter((report) => report.date === date).map(getComputedReadiness);
+  const rpeReports = state.reports.filter((report) => report.date === date).map(getComputedReport);
+  const readinessIds = new Set(readinessReports.map((report) => report.playerId));
+  const rpeIds = new Set(rpeReports.map((report) => report.playerId));
+  const shouldTrackMissing = date <= todayIso() && (gpsSessions.length || readinessReports.length || rpeReports.length || date === todayIso());
+  const missingReadiness = shouldTrackMissing ? activePlayers.filter((player) => !readinessIds.has(player.id)) : [];
+  const missingRpe = shouldTrackMissing ? activePlayers.filter((player) => !rpeIds.has(player.id)) : [];
+  const readinessAlerts = readinessReports.flatMap((report) => report.riskFlags.map((reason) => ({ type: "מוכנות", playerName: report.playerName, reason })));
+  const rpeAlerts = rpeReports.flatMap((report) => report.riskFlags.map((reason) => ({ type: "RPE", playerName: report.playerName, reason })));
+  const gpsAlerts = gpsRecords.flatMap((record) => record.riskFlags.map((reason) => ({ type: "GPS", playerName: record.playerName, reason })));
+  const missingAlerts = [
+    ...missingReadiness.map((player) => ({ type: "דוח חסר", playerName: player.name, reason: "חסר דוח מוכנות" })),
+    ...missingRpe.map((player) => ({ type: "דוח חסר", playerName: player.name, reason: "חסר דוח RPE" }))
+  ];
+  const loadSummary = buildCalendarLoadSummary(date, gpsRecords, rpeReports);
+  return {
+    date,
+    gpsSessions,
+    gpsRecords,
+    readinessReports,
+    rpeReports,
+    missingReadiness,
+    missingRpe,
+    alerts: [...readinessAlerts, ...rpeAlerts, ...gpsAlerts, ...missingAlerts],
+    gpsAvailable: gpsRecords.length > 0,
+    activePlayersCount: activePlayers.length,
+    loadSummary
+  };
+}
+
+function buildCalendarLoadSummary(date, gpsRecords, rpeReports) {
+  const plan = (state.calendarLoadPlans && state.calendarLoadPlans[date]) || {};
+  const preferredGps = getFullPeriodPreferred(gpsRecords);
+  const gpsAverage = preferredGps.length ? average(preferredGps.map((record) => record.gpsLoad)) : 0;
+  const rpeAverage = rpeReports.length ? average(rpeReports.map((report) => report.trainingLoad)) : 0;
+  const gpsScore = preferredGps.length ? loadValueToScore(gpsAverage) : normalizeLoadPlanValue(plan.gpsLoad);
+  const rpeScore = rpeReports.length ? loadValueToScore(rpeAverage) : normalizeLoadPlanValue(plan.rpeLoad);
+  return {
+    gpsScore,
+    rpeScore,
+    gpsValue: preferredGps.length ? gpsAverage : null,
+    rpeValue: rpeReports.length ? rpeAverage : null,
+    gpsSource: preferredGps.length ? `${preferredGps.length} רשומות GPS` : plan.gpsLoad ? "עומס GPS מתוכנן" : "אין נתון GPS",
+    rpeSource: rpeReports.length ? `${rpeReports.length} דוחות RPE` : plan.rpeLoad ? "עומס RPE מתוכנן" : "אין נתון RPE",
+    isGpsPlanned: !preferredGps.length && Boolean(plan.gpsLoad),
+    isRpePlanned: !rpeReports.length && Boolean(plan.rpeLoad)
+  };
+}
+
+function loadValueToScore(value) {
+  const number = Number(value) || 0;
+  if (number <= 200) return 1;
+  if (number <= 400) return 2;
+  if (number <= 600) return 3;
+  if (number <= 800) return 4;
+  return 5;
+}
+
+function calendarLoadScoreLabel(score) {
+  return ["אין נתון", "קל מאוד", "קל", "בינוני", "גבוה", "גבוה מאוד"][Number(score) || 0] || "אין נתון";
+}
+
+function renderCalendarDayCell(day, calendar) {
+  const inCurrentMonth = day.date.slice(0, 7) === calendar.anchorDate.slice(0, 7) || calendar.view === "week";
+  const isSelected = day.date === calendar.selectedDate;
+  const isToday = day.date === todayIso();
+  const isPopoverOpen = day.date === calendar.popoverDate;
+  const chips = getCalendarDayChips(day, calendar.filter);
+  return `
+    <button type="button" class="calendar-day ${inCurrentMonth ? "" : "muted"} ${isSelected ? "selected" : ""} ${isToday ? "today" : ""} ${isPopoverOpen ? "popover-open" : ""}" data-calendar-day="${escapeAttr(day.date)}">
+      <div class="calendar-day-topline">
+        <span class="calendar-day-number">${parseIsoDate(day.date).getDate()}</span>
+        ${renderCalendarDaySignals(day, chips)}
+      </div>
+      ${renderCalendarMiniLoadChart(day.loadSummary)}
+      ${renderCalendarDayPopover(day, chips)}
+    </button>
+  `;
+}
+
+function renderCalendarDaySignals(day, chips) {
+  const activityType = day.gpsSessions[0] ? day.gpsSessions[0].activityType || day.gpsSessions[0].type : "";
+  const activityTone = activityType === "training" ? "training" : activityType === "training_match" ? "friendly" : "match";
+  const showActivity = chips.some((chip) => chip.group === "training" || chip.group === "matches");
+  const showGps = chips.some((chip) => chip.group === "gps");
+  const showMissing = chips.some((chip) => chip.tone === "missing");
+  const showAlerts = chips.some((chip) => chip.group === "alerts");
+  return `
+    <span class="calendar-day-signals" aria-label="סימוני יום">
+      ${showActivity ? `<i class="${escapeAttr(activityTone)}" aria-label="פעילות"></i>` : ""}
+      ${showGps ? `<i class="gps" aria-label="GPS"></i>` : ""}
+      ${showMissing ? `<i class="missing" aria-label="דוחות חסרים"></i>` : ""}
+      ${showAlerts ? `<i class="alerts" aria-label="התראות"></i>` : ""}
+    </span>
+  `;
+}
+
+function renderCalendarDayPopover(day, chips) {
+  const missingCount = day.missingReadiness.length + day.missingRpe.length;
+  const attentionNames = getCalendarAttentionPlayerNames(day);
+  const events = day.gpsSessions.length
+    ? day.gpsSessions.slice(0, 3).map((sessionItem) => `${formatGpsSessionType(sessionItem.activityType || sessionItem.type)} · ${sessionItem.sessionName}`).join(" | ")
+    : "אין פעילות";
+  const missingText = missingCount
+    ? `${missingCount} חסרים · ${[...day.missingReadiness, ...day.missingRpe].slice(0, 4).map((player) => player.name).join(", ")}`
+    : "אין דוחות חסרים";
+  const alertText = day.alerts.length
+    ? day.alerts.slice(0, 4).map((alert) => `${alert.playerName}: ${alert.reason}`).join(" | ")
+    : "אין התראות";
+  return `
+    <div class="calendar-day-popover" role="tooltip">
+      <strong>${escapeHtml(formatDateDisplay(day.date))}</strong>
+      <p><b>אירועים:</b> ${escapeHtml(events)}</p>
+      <p><b>GPS Load:</b> ${day.loadSummary.gpsScore ? `${day.loadSummary.gpsScore}/5 · ${calendarLoadScoreLabel(day.loadSummary.gpsScore)}` : "אין נתון"}</p>
+      <p><b>RPE Load:</b> ${day.loadSummary.rpeScore ? `${day.loadSummary.rpeScore}/5 · ${calendarLoadScoreLabel(day.loadSummary.rpeScore)}` : "אין נתון"}</p>
+      <p><b>דוחות מוכנות:</b> ${day.readinessReports.length}/${day.activePlayersCount}</p>
+      <p><b>דוחות RPE:</b> ${day.rpeReports.length}/${day.activePlayersCount}</p>
+      <p><b>חסרים:</b> ${escapeHtml(missingText)}</p>
+      <p><b>התראות:</b> ${escapeHtml(alertText)}</p>
+      <p><b>דורשים תשומת לב:</b> ${attentionNames.length ? escapeHtml(attentionNames.slice(0, 6).join(", ")) : "אין"}</p>
+    </div>
+  `;
+}
+
+function renderCalendarMiniLoadChart(loadSummary) {
+  return `
+    <div class="calendar-mini-load" aria-label="השוואת עומס GPS מול RPE">
+      ${renderCalendarMiniLoadBar("GPS", loadSummary.gpsScore, "gps")}
+      ${renderCalendarMiniLoadBar("RPE", loadSummary.rpeScore, "rpe")}
+    </div>
+  `;
+}
+
+function renderCalendarMiniLoadBar(label, score, type) {
+  const value = Number(score) || 0;
+  return `
+    <div class="calendar-mini-load-item ${escapeAttr(type)} ${value ? "" : "empty"}" aria-label="${escapeAttr(`${label}: ${value || "אין נתון"}`)}">
+      <span class="calendar-mini-load-value">${value || "—"}</span>
+      <i style="--load-score:${value};"></i>
+      <b>${escapeHtml(label)}</b>
+    </div>
+  `;
+}
+
+function getCalendarDayChips(day, filter) {
+  const activityChips = day.gpsSessions.map((sessionItem) => {
+    const activityType = sessionItem.activityType || sessionItem.type;
+    const tone = activityType === "training" ? "training" : activityType === "training_match" ? "friendly" : "match";
+    return { tone, label: formatGpsSessionType(activityType), group: activityType === "training" ? "training" : "matches" };
+  });
+  const reportChips = [];
+  if (day.readinessReports.length) reportChips.push({ tone: "reports", label: `מוכנות ${day.readinessReports.length}/${day.activePlayersCount}`, group: "reports" });
+  if (day.rpeReports.length) reportChips.push({ tone: "reports", label: `RPE ${day.rpeReports.length}/${day.activePlayersCount}`, group: "reports" });
+  if (day.gpsAvailable) reportChips.push({ tone: "gps", label: "GPS זמין", group: "gps" });
+  if (day.missingReadiness.length || day.missingRpe.length) reportChips.push({ tone: "missing", label: `${day.missingReadiness.length + day.missingRpe.length} חסרים`, group: "reports" });
+  if (day.alerts.length) reportChips.push({ tone: "alerts", label: `${day.alerts.length} התראות`, group: "alerts" });
+  const chips = [...activityChips, ...reportChips];
+  if (filter === "all") return chips;
+  if (filter === "training") return chips.filter((chip) => chip.group === "training");
+  if (filter === "matches") return chips.filter((chip) => chip.group === "matches");
+  if (filter === "gps") return chips.filter((chip) => chip.group === "gps");
+  if (filter === "reports") return chips.filter((chip) => chip.group === "reports");
+  if (filter === "alerts") return chips.filter((chip) => chip.group === "alerts");
+  return chips;
+}
+
+function renderCalendarChip(chip) {
+  return `<span class="calendar-chip ${escapeAttr(chip.tone)}">${escapeHtml(chip.label)}</span>`;
+}
+
+function renderCalendarDayPanel(day) {
+  return `
+    <aside class="surface calendar-day-panel">
+      <div class="section-title">
+        <h3>${escapeHtml(formatDateDisplay(day.date))}</h3>
+        <span>${day.alerts.length ? `${day.alerts.length} התראות` : "ללא התראות"}</span>
+      </div>
+      <div class="calendar-panel-grid">
+        ${calendarPanelMetric("פעילויות", day.gpsSessions.length)}
+        ${calendarPanelMetric("GPS", day.gpsAvailable ? "זמין" : "אין")}
+        ${calendarPanelMetric("מוכנות", `${day.readinessReports.length}/${day.activePlayersCount}`)}
+        ${calendarPanelMetric("RPE", `${day.rpeReports.length}/${day.activePlayersCount}`)}
+        ${calendarPanelMetric("עומס GPS", day.loadSummary.gpsScore ? `${day.loadSummary.gpsScore}/5` : "אין")}
+        ${calendarPanelMetric("עומס RPE", day.loadSummary.rpeScore ? `${day.loadSummary.rpeScore}/5` : "אין")}
+      </div>
+      <div class="calendar-panel-section">
+        <h4>עומס יומי</h4>
+        <div class="calendar-panel-load-card">
+          ${renderCalendarPanelLoadRow("GPS Load", day.loadSummary.gpsScore, day.loadSummary.gpsSource, day.loadSummary.gpsValue)}
+          ${renderCalendarPanelLoadRow("RPE Load", day.loadSummary.rpeScore, day.loadSummary.rpeSource, day.loadSummary.rpeValue)}
+        </div>
+        ${renderCalendarLoadPlanForm(day)}
+      </div>
+      <div class="calendar-panel-section">
+        <h4>פעילות</h4>
+        ${day.gpsSessions.length ? day.gpsSessions.map(renderCalendarSessionRow).join("") : `<p class="muted-text">אין פעילות GPS ליום זה</p>`}
+      </div>
+      <div class="calendar-panel-section">
+        <h4>דוחות חסרים</h4>
+        ${day.missingReadiness.length || day.missingRpe.length ? `
+          ${day.missingReadiness.map((player) => `<p><b>${escapeHtml(player.name)}</b> · חסר דוח מוכנות</p>`).join("")}
+          ${day.missingRpe.map((player) => `<p><b>${escapeHtml(player.name)}</b> · חסר דוח RPE</p>`).join("")}
+        ` : `<p class="muted-text">אין דוחות חסרים</p>`}
+      </div>
+      <div class="calendar-panel-section">
+        <h4>התראות</h4>
+        ${day.alerts.length ? day.alerts.slice(0, 12).map((alert) => `<p><b>${escapeHtml(alert.playerName)}</b> · ${escapeHtml(alert.type)} · ${escapeHtml(alert.reason)}</p>`).join("") : `<p class="muted-text">אין התראות ליום זה</p>`}
+      </div>
+      <div class="calendar-panel-section">
+        <h4>שחקנים הדורשים תשומת לב</h4>
+        ${renderCalendarAttentionPlayers(day)}
+      </div>
+    </aside>
+  `;
+}
+
+function renderCalendarPanelLoadRow(label, score, source, value) {
+  return `
+    <div class="calendar-panel-load-row">
+      <span>${escapeHtml(label)}</span>
+      <strong>${score ? `${score}/5 · ${calendarLoadScoreLabel(score)}` : "אין נתון"}</strong>
+      <small>${escapeHtml(source)}${value !== null && value !== undefined ? ` · ערך: ${escapeHtml(formatInteger(value))}` : ""}</small>
+    </div>
+  `;
+}
+
+function renderCalendarLoadPlanForm(day) {
+  if (day.date <= todayIso()) return "";
+  const plan = (state.calendarLoadPlans && state.calendarLoadPlans[day.date]) || {};
+  return `
+    <form class="calendar-load-plan-form" data-calendar-plan-form="${escapeAttr(day.date)}">
+      <strong>תכנון עומס עתידי</strong>
+      <label>
+        <span>GPS מתוכנן</span>
+        ${calendarLoadSelect("plannedGpsLoad", plan.gpsLoad)}
+      </label>
+      <label>
+        <span>RPE מתוכנן</span>
+        ${calendarLoadSelect("plannedRpeLoad", plan.rpeLoad)}
+      </label>
+      <button type="submit" class="btn secondary">שמירת תכנון</button>
+    </form>
+  `;
+}
+
+function calendarLoadSelect(name, selected) {
+  const options = ["", 1, 2, 3, 4, 5].map((value) => {
+    const label = value === "" ? "אין נתון" : `${value} - ${calendarLoadScoreLabel(value)}`;
+    return `<option value="${escapeAttr(value)}" ${String(selected || "") === String(value) ? "selected" : ""}>${escapeHtml(label)}</option>`;
+  }).join("");
+  return `<select name="${escapeAttr(name)}">${options}</select>`;
+}
+
+function renderCalendarAttentionPlayers(day) {
+  const names = getCalendarAttentionPlayerNames(day);
+  if (!names.length) return `<p class="muted-text">אין שחקנים הדורשים תשומת לב מעבר לדוחות חסרים</p>`;
+  return names.slice(0, 8).map((name) => `<p><b>${escapeHtml(name)}</b> · דורש מעקב לפי התראות היום</p>`).join("");
+}
+
+function getCalendarAttentionPlayerNames(day) {
+  return unique(day.alerts
+    .filter((alert) => !String(alert.type || "").includes("חסר") && !String(alert.reason || "").includes("חסר"))
+    .map((alert) => alert.playerName)
+    .filter(Boolean));
+}
+
+function calendarPanelMetric(label, value) {
+  return `
+    <div>
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+    </div>
+  `;
+}
+
+function renderCalendarSessionRow(sessionItem) {
+  const type = sessionItem.activityType || sessionItem.type;
+  const tone = type === "training" ? "training" : type === "training_match" ? "friendly" : "match";
+  const recordsCount = state.gpsRecords.filter((record) => record.gpsSessionId === sessionItem.id).length;
+  return `
+    <article class="calendar-session-row ${tone}">
+      <div>
+        <strong>${escapeHtml(sessionItem.sessionName)}</strong>
+        <span>${escapeHtml(formatGpsSessionType(type))}${sessionItem.opponent ? ` · ${escapeHtml(sessionItem.opponent)}` : ""}</span>
+      </div>
+      <span>${recordsCount ? `${recordsCount} רשומות GPS` : "אין GPS"}</span>
+    </article>
+  `;
+}
+
+function getCalendarTitle(anchorDate, view) {
+  if (view === "week") {
+    const range = getWeekRange(anchorDate);
+    return `${formatShortDate(range.start)} - ${formatShortDate(range.end)}`;
+  }
+  return parseIsoDate(anchorDate).toLocaleDateString("he-IL", { month: "long", year: "numeric" });
+}
+
+function shiftCalendarAnchor(anchorDate, view, direction) {
+  if (view === "week") return addDays(anchorDate, direction * 7);
+  const date = parseIsoDate(anchorDate);
+  date.setMonth(date.getMonth() + direction);
+  return todayIso(date);
+}
+
+function getCalendarMonthGridRange(anchorDate) {
+  const date = parseIsoDate(anchorDate);
+  const first = new Date(date.getFullYear(), date.getMonth(), 1, 12);
+  const last = new Date(date.getFullYear(), date.getMonth() + 1, 0, 12);
+  const start = new Date(first);
+  start.setDate(first.getDate() - first.getDay());
+  const end = new Date(last);
+  end.setDate(last.getDate() + (6 - last.getDay()));
+  return { start: todayIso(start), end: todayIso(end) };
+}
+
+function getDateRangeList(start, end) {
+  const dates = [];
+  let current = start;
+  while (current <= end) {
+    dates.push(current);
+    current = addDays(current, 1);
+  }
+  return dates;
+}
+
 function renderGpsPage() {
   const filters = uiState.gpsFilters;
   const metric = filters.metric || "totalDistance";
@@ -2344,10 +5354,10 @@ function renderGpsPage() {
         <h2>GPS</h2>
         <p>ייבוא, ניתוח והשוואת עומס חיצוני מול דוחות RPE ומוכנות</p>
       </div>
-      <button class="btn secondary" id="clearGpsImport" type="button">נקה ייבוא</button>
+      <button class="btn primary" id="openGpsImport" type="button">ייבוא דוח GPS</button>
     </div>
 
-    ${renderGpsImportPanel()}
+    ${uiState.gpsImportModalOpen ? renderGpsImportModal() : ""}
 
     <section class="section surface">
       <div class="filters gps-filters">
@@ -2356,63 +5366,36 @@ function renderGpsPage() {
         ${filterSelect("gpsPlayerFilter", "שחקן", playerFilterOptions(), filters.playerId, playerFilterValues())}
         ${filterSelect("gpsPositionFilter", "עמדה", ["הכול", ...positions], filters.position, ["all", ...positions])}
         ${filterSelect("gpsPeriodFilter", "תקופה", ["הכול", ...GPS_PERIODS], filters.period, ["all", ...GPS_PERIODS])}
-        ${filterSelect("gpsMetricFilter", "מדד", GPS_METRICS.map((item) => item[1]), metric, GPS_METRICS.map((item) => item[0]))}
       </div>
     </section>
 
-    <section class="metric-grid section">
-      ${metricCard("רשומות GPS", records.length, selectedSession ? selectedSession.sessionName : "כל המפגשים")}
-      ${metricCard("מרחק כולל", formatInteger(sum(records.map((record) => record.totalDistance))), "מטרים")}
-      ${metricCard("HSR", formatInteger(sum(records.map((record) => record.highSpeedRunning))), "מטרים")}
-      ${metricCard("עומס GPS ממוצע", formatInteger(average(records.map((record) => record.gpsLoad))), "משוער")}
-    </section>
-
-    <section class="section">
-      <div class="section-title">
-        <h3>דגלי GPS ועומס פנימי</h3>
-        <span>${sum(records.map((record) => record.riskFlags.length ? 1 : 0))} שחקנים</span>
-      </div>
-      ${renderGpsRiskPanel(records)}
-    </section>
-
-    <section class="section">
-      <div class="section-title">
-        <h3>סקירת משחק / אימון</h3>
-        <span>${records.length} רשומות</span>
-      </div>
-      ${renderGpsTable(records)}
-    </section>
-
-    <section class="section">
-      <div class="section-title">
-        <h3>Top 5</h3>
-        <span>מדדים מרכזיים</span>
-      </div>
-      <div class="top-grid">
-        ${renderGpsTopList(records, "totalDistance", "מרחק כולל")}
-        ${renderGpsTopList(records, "highSpeedRunning", "HSR")}
-        ${renderGpsTopList(records, "distanceAbove25", "מעל 25 קמ״ש")}
-        ${renderGpsTopList(records, "maxSpeed", "מהירות מקסימלית")}
-        ${renderGpsTopList(records, "accelerations", "האצות")}
-        ${renderGpsTopList(records, "decelerations", "האטות")}
-      </div>
-    </section>
-
-    <section class="charts-grid section">
-      ${chartCard(`מדד לפי שחקן - ${escapeHtml(getGpsMetricLabel(metric))}`, renderBarChart(records.filter((record) => record.period === "משחק מלא" || filters.period !== "all"), metric))}
-      ${chartCard("מחצית ראשונה מול שנייה", renderPeriodComparisonChart(records, metric))}
-      ${chartCard("ממוצע לפי עמדה", renderPositionAverageChart(records, metric))}
-      ${chartCard("שחקן מול ממוצע קבוצה", renderPlayerVsTeamAverageChart(records, metric))}
-    </section>
+    ${renderGpsSessionReviewDashboard(records, selectedSession, filters)}
   `);
 
   mount(html, bindGpsPage);
 }
 
 function bindGpsPage() {
+  const openImportButton = document.getElementById("openGpsImport");
+  if (openImportButton) openImportButton.addEventListener("click", () => {
+    uiState.gpsImportModalOpen = true;
+    uiState.gpsImport = null;
+    uiState.gpsSessionSetup = createDefaultGpsSessionSetup();
+    renderGpsPage();
+  });
+  document.querySelectorAll("[data-close-gps-import]").forEach((button) => {
+    button.addEventListener("click", () => closeGpsImportModal());
+  });
+  const modalBackdrop = document.querySelector(".gps-import-modal-backdrop");
+  if (modalBackdrop) {
+    modalBackdrop.addEventListener("click", (event) => {
+      if (event.target === modalBackdrop) closeGpsImportModal();
+    });
+  }
   const clearButton = document.getElementById("clearGpsImport");
   if (clearButton) clearButton.addEventListener("click", () => {
     uiState.gpsImport = null;
+    uiState.gpsSessionSetup = createDefaultGpsSessionSetup();
     renderGpsPage();
   });
   const fileInput = document.getElementById("gpsFileInput");
@@ -2421,6 +5404,7 @@ function bindGpsPage() {
       const file = fileInput.files && fileInput.files[0];
       if (!file) return;
       try {
+        syncGpsSessionSetupFromDom(uiState.gpsSessionSetup);
         const parsed = await parseGpsFile(file);
         uiState.gpsImport = {
           fileName: file.name,
@@ -2428,9 +5412,7 @@ function bindGpsPage() {
           rows: parsed.rows,
           mapping: createAutoGpsMapping(parsed.headers),
           playerMatches: {},
-          sessionType: "match",
-          opponent: "",
-          notes: ""
+          ...normalizeGpsSessionSetup(uiState.gpsSessionSetup)
         };
         renderGpsPage();
       } catch (error) {
@@ -2461,6 +5443,16 @@ function bindGpsPage() {
       if (id === "gpsImportNotes") uiState.gpsImport.notes = input.value;
     });
   });
+  document.querySelectorAll("[data-gps-setup]").forEach((input) => {
+    const eventName = input.tagName === "SELECT" ? "change" : "input";
+    input.addEventListener(eventName, () => {
+      const target = uiState.gpsImport || uiState.gpsSessionSetup;
+      const key = input.getAttribute("data-gps-setup");
+      if (!key) return;
+      target[key] = input.value;
+      if (key === "activityType") renderGpsPage();
+    });
+  });
   const saveImport = document.getElementById("saveGpsImport");
   if (saveImport) saveImport.addEventListener("click", saveGpsImport);
 
@@ -2479,48 +5471,181 @@ function bindGpsPage() {
       renderGpsPage();
     });
   });
+  document.querySelectorAll("[data-gps-review-metric]").forEach((button) => {
+    button.addEventListener("click", () => {
+      uiState.gpsFilters.metric = button.getAttribute("data-gps-review-metric") || "totalDistance";
+      renderGpsPage();
+    });
+  });
+}
+
+function closeGpsImportModal() {
+  uiState.gpsImportModalOpen = false;
+  uiState.gpsImport = null;
+  uiState.gpsSessionSetup = createDefaultGpsSessionSetup();
+  renderGpsPage();
+}
+
+function renderGpsImportModal() {
+  return `
+    <div class="modal-backdrop gps-import-modal-backdrop" role="presentation">
+      <section class="modal-panel gps-import-modal" role="dialog" aria-modal="true" aria-labelledby="gpsImportModalTitle">
+        <header class="modal-header">
+          <div>
+            <span class="eyebrow">GPS</span>
+            <h3 id="gpsImportModalTitle">ייבוא דוח GPS</h3>
+            <p>הגדרת סשן, העלאת קובץ ומיפוי עמודות</p>
+          </div>
+          <button class="icon-button" type="button" data-close-gps-import aria-label="סגור">×</button>
+        </header>
+        <div class="modal-body">
+          ${renderGpsImportPanel()}
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function normalizeGpsSessionSetup(input = {}) {
+  const defaults = createDefaultGpsSessionSetup();
+  const setup = { ...defaults, ...(input || {}) };
+  setup.activityType = setup.activityType || setup.sessionType || setup.type || "match";
+  setup.date = setup.date || todayIso();
+  setup.sessionName = setup.sessionName || "";
+  setup.opponent = setup.opponent || "";
+  setup.type = setup.activityType;
+  return setup;
+}
+
+function syncGpsSessionSetupFromDom(target) {
+  if (!target) return target;
+  document.querySelectorAll("[data-gps-setup]").forEach((input) => {
+    const key = input.getAttribute("data-gps-setup");
+    if (key) target[key] = input.value;
+  });
+  return target;
+}
+
+function validateGpsSessionSetup(setupInput) {
+  const setup = normalizeGpsSessionSetup(setupInput);
+  if (!setup.date) return "יש לבחור תאריך לסשן GPS";
+  if (!setup.sessionName.trim()) return "יש להזין שם סשן GPS";
+  if (setup.activityType === "training" && !setup.matchDayRelation) return "יש לבחור יחס ליום משחק";
+  return "";
+}
+
+function renderGpsSessionSetupPanel(setupInput, showFileInput) {
+  const setup = normalizeGpsSessionSetup(setupInput);
+  return `
+    <section class="surface form-panel grid gps-session-setup-panel">
+      <div class="section-title">
+        <h3>ייבוא דוח GPS</h3>
+        <span>${showFileInput ? "הגדרת סשן לפני העלאת קובץ" : "פרטי הסשן לייבוא"}</span>
+      </div>
+      <div class="grid three">
+        <div class="field">
+          <label for="gpsSetupDate">תאריך</label>
+          <input id="gpsSetupDate" data-gps-setup="date" type="date" value="${escapeAttr(setup.date)}" required />
+        </div>
+        <div class="field">
+          <label for="gpsSetupName">שם סשן</label>
+          <input id="gpsSetupName" data-gps-setup="sessionName" value="${escapeAttr(setup.sessionName)}" placeholder="לדוגמה: משחק ליגה - מחזור 12" required />
+        </div>
+        <div class="field">
+          <label for="gpsSetupActivityType">סוג פעילות</label>
+          <select id="gpsSetupActivityType" data-gps-setup="activityType">
+            ${GPS_ACTIVITY_TYPES.map(([value, label]) => `<option value="${escapeAttr(value)}" ${setup.activityType === value ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}
+          </select>
+        </div>
+      </div>
+      ${renderGpsSessionConditionalFields(setup)}
+      ${showFileInput ? `
+        <div class="gps-upload-drop">
+          <div>
+            <strong>העלאת קובץ GPS</strong>
+            <p>לאחר מילוי פרטי הסשן, העלה קובץ CSV או Excel למיפוי עמודות.</p>
+          </div>
+          <input id="gpsFileInput" type="file" accept=".csv,.tsv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" />
+        </div>
+      ` : ""}
+    </section>
+  `;
+}
+
+function renderGpsSessionConditionalFields(setup) {
+  if (setup.activityType === "training") {
+    return `
+      <div class="grid three gps-session-conditional">
+        <div class="field">
+          <label for="gpsSetupMdRelation">יחס ליום משחק</label>
+          <select id="gpsSetupMdRelation" data-gps-setup="matchDayRelation">
+            ${renderSimpleOptions(GPS_MATCH_DAY_RELATIONS, setup.matchDayRelation || "MD-1")}
+          </select>
+        </div>
+      </div>
+    `;
+  }
+  if (setup.activityType === "training_match") {
+    return `
+      <div class="grid three gps-session-conditional">
+        <div class="field">
+          <label for="gpsSetupOpponent">יריבה</label>
+          <input id="gpsSetupOpponent" data-gps-setup="opponent" value="${escapeAttr(setup.opponent)}" placeholder="שם יריבה" />
+        </div>
+        <div class="field">
+          <label for="gpsSetupFormat">פורמט</label>
+          <select id="gpsSetupFormat" data-gps-setup="format">
+            ${renderSimpleOptions(GPS_TRAINING_MATCH_FORMATS, setup.format || "11v11")}
+          </select>
+        </div>
+      </div>
+    `;
+  }
+  return `
+    <div class="grid three gps-session-conditional">
+      <div class="field">
+        <label for="gpsSetupCompetition">מסגרת</label>
+        <select id="gpsSetupCompetition" data-gps-setup="competition">
+          ${renderSimpleOptions(GPS_COMPETITIONS, setup.competition || "ליגה")}
+        </select>
+      </div>
+      <div class="field">
+        <label for="gpsSetupRound">מחזור / שלב</label>
+        <input id="gpsSetupRound" data-gps-setup="matchRound" value="${escapeAttr(setup.matchRound)}" placeholder="לדוגמה: מחזור 12" />
+      </div>
+      <div class="field">
+        <label for="gpsSetupOpponent">יריבה</label>
+        <input id="gpsSetupOpponent" data-gps-setup="opponent" value="${escapeAttr(setup.opponent)}" placeholder="שם יריבה" />
+      </div>
+      <div class="field">
+        <label for="gpsSetupHomeAway">בית / חוץ</label>
+        <select id="gpsSetupHomeAway" data-gps-setup="homeAway">
+          ${renderSimpleOptions(GPS_HOME_AWAY_OPTIONS, setup.homeAway || "בית")}
+        </select>
+      </div>
+      <div class="field">
+        <label for="gpsSetupResult">תוצאה</label>
+        <input id="gpsSetupResult" data-gps-setup="result" value="${escapeAttr(setup.result)}" placeholder="אופציונלי" />
+      </div>
+    </div>
+  `;
 }
 
 function renderGpsImportPanel() {
   const importState = uiState.gpsImport;
   if (!importState) {
     return `
-      <section class="surface form-panel grid">
-        <div class="section-title">
-          <h3>ייבוא דוח GPS</h3>
-          <span>CSV או Excel XLSX</span>
-        </div>
-        <div class="field">
-          <label for="gpsFileInput">בחירת קובץ</label>
-          <input id="gpsFileInput" type="file" accept=".csv,.tsv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" />
-        </div>
-      </section>
+      ${renderGpsSessionSetupPanel(uiState.gpsSessionSetup, true)}
     `;
   }
   const mappedRows = mapGpsImportRows(importState).slice(0, 8);
   const unmatchedNames = getGpsUnmatchedNames(importState);
   return `
+    ${renderGpsSessionSetupPanel(importState, false)}
     <section class="surface form-panel grid">
       <div class="section-title">
         <h3>מיפוי עמודות</h3>
         <span>${escapeHtml(importState.fileName)} · ${importState.rows.length} שורות</span>
-      </div>
-      <div class="grid three">
-        <div class="field">
-          <label for="gpsImportType">סוג מפגש</label>
-          <select id="gpsImportType">
-            <option value="match" ${importState.sessionType === "match" ? "selected" : ""}>משחק</option>
-            <option value="training" ${importState.sessionType === "training" ? "selected" : ""}>אימון</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="gpsImportOpponent">יריבה</label>
-          <input id="gpsImportOpponent" value="${escapeAttr(importState.opponent || "")}" placeholder="אופציונלי" />
-        </div>
-        <div class="field">
-          <label for="gpsImportNotes">הערות</label>
-          <input id="gpsImportNotes" value="${escapeAttr(importState.notes || "")}" />
-        </div>
       </div>
       <div class="mapping-grid">
         ${GPS_FIELDS.map(([field, label]) => `
@@ -2605,6 +5730,13 @@ function renderGpsImportPreview(rows) {
 function saveGpsImport() {
   const importState = uiState.gpsImport;
   if (!importState) return;
+  syncGpsSessionSetupFromDom(importState);
+  const sessionSetup = normalizeGpsSessionSetup(importState);
+  const setupError = validateGpsSessionSetup(sessionSetup);
+  if (setupError) {
+    alert(setupError);
+    return;
+  }
   const missingFields = GPS_REQUIRED_FIELDS.filter((field) => !importState.mapping[field]);
   if (missingFields.length) {
     alert("חסרים שדות חובה במיפוי");
@@ -2619,14 +5751,24 @@ function saveGpsImport() {
   }
   const first = rows[0];
   if (!first) return;
+  const defaultSetup = createDefaultGpsSessionSetup();
+  const sessionDate = sessionSetup.date === defaultSetup.date && first.date ? first.date : sessionSetup.date;
+  const sessionName = sessionSetup.sessionName.trim() === defaultSetup.sessionName && first.sessionName ? first.sessionName : sessionSetup.sessionName.trim();
   const sessionId = createId("gps-session");
   const gpsSession = {
     id: sessionId,
-    date: first.date || todayIso(),
-    sessionName: first.sessionName || "GPS",
-    type: importState.sessionType || "match",
-    opponent: importState.opponent || "",
-    notes: importState.notes || ""
+    date: sessionDate,
+    sessionName,
+    type: sessionSetup.activityType,
+    activityType: sessionSetup.activityType,
+    competition: sessionSetup.competition || "",
+    matchRound: sessionSetup.matchRound || "",
+    opponent: sessionSetup.opponent || "",
+    homeAway: sessionSetup.homeAway || "",
+    result: sessionSetup.result || "",
+    matchDayRelation: sessionSetup.matchDayRelation || "",
+    format: sessionSetup.format || "",
+    notes: sessionSetup.notes || ""
   };
   const records = rows.map((row, index) => {
     const player = findGpsMatchedPlayer(row.playerName, importState);
@@ -2657,6 +5799,8 @@ function saveGpsImport() {
   state.gpsRecords.unshift(...records);
   saveState();
   uiState.gpsImport = null;
+  uiState.gpsImportModalOpen = false;
+  uiState.gpsSessionSetup = createDefaultGpsSessionSetup();
   uiState.gpsFilters.sessionId = sessionId;
   uiState.gpsFilters.date = gpsSession.date;
   renderGpsPage();
@@ -2746,6 +5890,349 @@ function renderGpsRiskPanel(records) {
       `).join("")}
     </div>
   `;
+}
+
+function renderGpsSessionReviewDashboard(records, selectedSession, filters) {
+  if (!records.length) return `<div class="surface empty section">אין נתוני GPS להצגה</div>`;
+  const reviewRecords = getGpsReviewRecords(records, filters);
+  const enrichedRecords = reviewRecords.map(enrichPlayerGpsRecord);
+  const allEnrichedRecords = records.map(enrichPlayerGpsRecord);
+  const selectedMetric = getGpsReviewMetric(filters.metric || "totalDistance");
+  return `
+    <section class="section gps-review-dashboard">
+      ${renderGpsSessionSummaryHeader(enrichedRecords, selectedSession, filters)}
+      <article class="surface gps-main-chart-card">
+        <div class="gps-main-chart-header">
+          <div>
+            <span class="eyebrow">מדדים לפי שחקן</span>
+            <h3>${escapeHtml(selectedMetric.label)} לפי שחקן</h3>
+            <p>השוואת שחקנים מול ממוצע הקבוצה. רחף על עמודה כדי לראות ערך, פער ואחוז מעל/מתחת לממוצע.</p>
+          </div>
+          <span>${enrichedRecords.length} שחקנים · ${escapeHtml(selectedMetric.axisLabel)}</span>
+        </div>
+        ${renderGpsMetricSelector(selectedMetric.key)}
+        ${renderGpsMainMetricBarChart(enrichedRecords, selectedMetric)}
+      </article>
+
+      <section class="section">
+        <div class="section-title">
+          <h3>מצטיינים בסשן</h3>
+          <span>Top performers</span>
+        </div>
+        <div class="gps-top-performer-grid">
+          ${renderGpsTopPerformerCard(enrichedRecords, "totalDistance", "Highest Distance")}
+          ${renderGpsTopPerformerCard(enrichedRecords, "highSpeedRunning", "Highest HSR")}
+          ${renderGpsTopPerformerCard(enrichedRecords, "sprintDistance", "Highest Sprint Distance")}
+          ${renderGpsTopPerformerCard(enrichedRecords, "sprintCount", "Most Sprints")}
+          ${renderGpsTopPerformerCard(enrichedRecords, "maxSpeed", "Highest Max Speed")}
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-title">
+          <h3>התראות GPS</h3>
+          <span>${sum(getGpsAlertGroups(enrichedRecords).map((group) => group.items.length))} התראות</span>
+        </div>
+        ${renderGpsAlertGroups(enrichedRecords)}
+      </section>
+
+      <details class="surface gps-full-data-table">
+        <summary>
+          <span>טבלת נתונים מלאה</span>
+          <strong>${allEnrichedRecords.length} רשומות</strong>
+        </summary>
+        ${renderGpsTable(allEnrichedRecords)}
+      </details>
+    </section>
+  `;
+}
+
+function getGpsReviewRecords(records, filters) {
+  if (filters && filters.period && filters.period !== "all") return records;
+  return getFullPeriodPreferred(records);
+}
+
+function renderGpsSessionSummaryHeader(records, selectedSession, filters) {
+  const playersCount = unique(records.map((record) => record.playerId || record.playerName).filter(Boolean)).length;
+  const maxSpeed = Math.max(0, ...records.map((record) => Number(record.maxSpeed) || 0));
+  const sessionName = selectedSession ? selectedSession.sessionName : "כל המפגשים";
+  const sessionDate = selectedSession ? formatDateDisplay(selectedSession.date) : filters.date !== "all" ? formatDateDisplay(filters.date) : "כל התאריכים";
+  const sessionType = selectedSession ? formatGpsSessionType(selectedSession.type) : "כל הסוגים";
+  return `
+    <article class="surface gps-session-summary">
+      <div class="gps-session-title">
+        <span class="eyebrow">סקירת GPS</span>
+        <h3>${escapeHtml(sessionName)}</h3>
+        <p>${escapeHtml(sessionDate)} · ${escapeHtml(sessionType)}</p>
+        ${selectedSession ? `<p class="gps-session-meta-line">${escapeHtml(getGpsSessionMetaSummary(selectedSession))}</p>` : ""}
+      </div>
+      <div class="gps-session-summary-grid">
+        ${gpsSummaryMetric("שחקנים", playersCount)}
+        ${gpsSummaryMetric("מרחק ממוצע", `${formatNumber(average(records.map((record) => record.totalDistance)) / 1000)} ק״מ`)}
+        ${gpsSummaryMetric("HSR ממוצע", `${formatInteger(average(records.map((record) => record.highSpeedRunning)))} מ׳`)}
+        ${gpsSummaryMetric("Sprint ממוצע", `${formatInteger(average(records.map((record) => record.sprintDistance)))} מ׳`)}
+        ${gpsSummaryMetric("מהירות שיא", `${formatNumber(maxSpeed)} קמ״ש`)}
+      </div>
+    </article>
+  `;
+}
+
+function getGpsSessionMetaSummary(sessionItem) {
+  if (!sessionItem) return "";
+  const type = sessionItem.activityType || sessionItem.type;
+  if (type === "training") return sessionItem.matchDayRelation || "אימון";
+  if (type === "training_match") {
+    return [sessionItem.opponent, sessionItem.format].filter(Boolean).join(" · ") || "משחק אימון";
+  }
+  return [sessionItem.competition, sessionItem.matchRound, sessionItem.opponent, sessionItem.homeAway, sessionItem.result].filter(Boolean).join(" · ") || "משחק";
+}
+
+function gpsSummaryMetric(label, value) {
+  return `
+    <div>
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+    </div>
+  `;
+}
+
+function renderGpsMetricSelector(selectedKey) {
+  const metricMap = new Map(GPS_METRICS);
+  return `
+    <div class="gps-metric-selector" aria-label="בחירת מדד GPS">
+      ${GPS_METRIC_GROUPS.map((group) => `
+        <div class="gps-metric-group">
+          <span>${escapeHtml(group.title)}</span>
+          <div class="gps-metric-buttons">
+            ${group.keys.filter((key) => metricMap.has(key)).map((key) => {
+              const metric = getGpsReviewMetric(key);
+              return `<button class="gps-metric-button ${selectedKey === key ? "active" : ""}" type="button" data-gps-review-metric="${escapeAttr(key)}">${escapeHtml(metric.label)}</button>`;
+            }).join("")}
+          </div>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderGpsMainMetricBarChart(records, metric) {
+  const rows = records
+    .map((record) => ({ label: record.playerName, value: Number(record[metric.key]) || 0 }))
+    .sort((a, b) => b.value - a.value);
+  if (!rows.length) return `<div class="surface empty gps-chart-empty">אין נתוני GPS להצגה</div>`;
+  const averageValue = average(rows.map((row) => row.value)) || 0;
+  const maxValue = Math.max(...rows.map((row) => Number(row.value) || 0), averageValue, 1) * 1.12;
+  const averagePercent = Math.max(0, Math.min(100, (averageValue / maxValue) * 100));
+  const minWidth = Math.max(820, rows.length * 112);
+  const ticks = [1, 0.75, 0.5, 0.25, 0];
+  const averageLabel = formatGpsReviewMetric(metric.key, averageValue);
+  return `
+    <div class="gps-html-chart" style="--avg-position:${averagePercent}%; --bar-count:${rows.length};">
+      <div class="gps-chart-context">
+        <div>
+          <span>מדד נבחר</span>
+          <strong>${escapeHtml(metric.label)}</strong>
+          <small>${escapeHtml(metric.axisLabel)}</small>
+        </div>
+        <div>
+          <span>ממוצע קבוצה</span>
+          <strong>${escapeHtml(averageLabel)}</strong>
+          <small>הקו המקווקו בגרף</small>
+        </div>
+      </div>
+      <div class="gps-html-chart-shell">
+        <div class="gps-y-axis" aria-hidden="true">
+          ${ticks.map((tick) => `<span>${escapeHtml(formatGpsReviewMetric(metric.key, maxValue * tick))}</span>`).join("")}
+        </div>
+        <div class="gps-bars-viewport" tabindex="0" aria-label="גרף ${escapeAttr(metric.label)} לפי שחקן">
+          <div class="gps-bars-stage" style="min-width:${minWidth}px">
+            <div class="gps-bars-plot">
+              <div class="gps-average-rule" style="bottom:${averagePercent}%"><span>ממוצע קבוצה · ${escapeHtml(averageLabel)}</span></div>
+              <div class="gps-bars-grid">
+                ${rows.map((row) => {
+                  const value = Number(row.value) || 0;
+                  const barPercent = Math.max(0, Math.min(100, (value / maxValue) * 100));
+                  const tone = getGpsAverageComparisonTone(value, averageValue);
+                  const tooltip = getGpsChartTooltip(row.label, metric, value, averageValue);
+                  return `
+                    <button class="gps-bar-column" type="button" style="--bar-percent:${barPercent}%;" aria-label="${escapeAttr(tooltip)}">
+                      <span class="gps-bar ${tone}"></span>
+                      <span class="gps-html-tooltip">${escapeHtml(tooltip).replace(/\n/g, "<br>")}</span>
+                    </button>
+                  `;
+                }).join("")}
+              </div>
+            </div>
+            <div class="gps-player-label-row">
+              ${rows.map((row) => `<span>${escapeHtml(row.label)}</span>`).join("")}
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="gps-axis-captions">
+        <span>Y: ${escapeHtml(metric.axisLabel)}</span>
+        <span>X: שמות שחקנים</span>
+      </div>
+      <div class="gps-chart-legend" aria-label="מקרא השוואה לממוצע">
+        <span class="above">מעל ממוצע</span>
+        <span class="near">קרוב לממוצע</span>
+        <span class="below">מתחת לממוצע</span>
+      </div>
+    </div>
+  `;
+}
+
+function getGpsReviewMetric(metricKey) {
+  const item = GPS_METRICS.find(([key]) => key === metricKey) || GPS_METRICS[0];
+  const key = item[0];
+  const unit = getGpsReviewMetricUnit(key);
+  return {
+    key,
+    label: item[1],
+    unit,
+    axisLabel: unit ? `${item[1]} (${unit})` : item[1]
+  };
+}
+
+function getGpsAverageComparisonTone(value, averageValue) {
+  if (!averageValue) return "near";
+  const percent = ((Number(value) - averageValue) / averageValue) * 100;
+  if (percent >= 5) return "above";
+  if (percent <= -5) return "below";
+  return "near";
+}
+
+function getGpsChartTooltip(playerName, metric, value, averageValue) {
+  const difference = Number(value) - averageValue;
+  const percent = averageValue ? (difference / averageValue) * 100 : 0;
+  const direction = percent > 0 ? "מעל ממוצע הקבוצה" : percent < 0 ? "מתחת לממוצע הקבוצה" : "זהה לממוצע הקבוצה";
+  const signedPercent = percent > 0 ? `+${formatNumber(percent)}%` : `${formatNumber(percent)}%`;
+  return [
+    playerName,
+    `${metric.label}: ${formatGpsReviewMetric(metric.key, value)}`,
+    `פער מהממוצע: ${formatGpsReviewDifference(metric.key, difference)}`,
+    `${signedPercent} ${direction}`
+  ].join("\n");
+}
+
+function formatGpsReviewDifference(metric, value) {
+  const numeric = Number(value) || 0;
+  const prefix = numeric > 0 ? "+" : numeric < 0 ? "-" : "";
+  return `${prefix}${formatGpsReviewMetric(metric, Math.abs(numeric))}`;
+}
+
+function renderGpsTeamBarChart(records, metric, title) {
+  const rows = records
+    .map((record) => ({ label: record.playerName, value: Number(record[metric]) || 0 }))
+    .sort((a, b) => b.value - a.value);
+  return chartCard(title, renderSimpleBarChart(rows, metric, title));
+}
+
+function renderGpsTopPerformerCard(records, metric, title) {
+  const best = getGpsBestRecord(records, metric);
+  return `
+    <article class="gps-top-performer-card">
+      <span>${escapeHtml(title)}</span>
+      ${best ? `
+        <strong>${escapeHtml(best.playerName)}</strong>
+        <p>${escapeHtml(formatGpsReviewMetric(metric, best[metric]))}</p>
+      ` : `
+        <strong>אין נתון</strong>
+        <p>אין רשומות להצגה</p>
+      `}
+    </article>
+  `;
+}
+
+function getGpsBestRecord(records, metric) {
+  return records
+    .filter((record) => Number.isFinite(Number(record[metric])))
+    .sort((a, b) => Number(b[metric]) - Number(a[metric]))[0] || null;
+}
+
+function formatGpsReviewMetric(metric, value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return "אין נתון";
+  const numeric = Number(value) || 0;
+  if (metric === "totalDistance") return `${formatNumber(numeric / 1000)} ק״מ`;
+  if (["highSpeedRunning", "sprintDistance", "distanceAbove18", "distanceAbove25", "hmld"].includes(metric)) return `${formatInteger(numeric)} מ׳`;
+  if (metric === "maxSpeed") return `${formatNumber(numeric)} קמ״ש`;
+  if (metric === "distancePerMinute") return `${formatNumber(numeric)} מ׳/דק׳`;
+  if (metric === "minutesPlayed") return `${formatInteger(numeric)} דק׳`;
+  if (metric === "workRestRatio") return formatNumber(numeric);
+  if (["sprintCount", "accelerations", "decelerations"].includes(metric)) return formatInteger(numeric);
+  return formatNumber(numeric);
+}
+
+function getGpsReviewMetricUnit(metric) {
+  if (metric === "totalDistance") return "ק״מ";
+  if (["highSpeedRunning", "sprintDistance", "distanceAbove18", "distanceAbove25", "hmld"].includes(metric)) return "מ׳";
+  if (metric === "maxSpeed") return "קמ״ש";
+  if (metric === "distancePerMinute") return "מ׳/דק׳";
+  if (metric === "minutesPlayed") return "דקות";
+  if (["sprintCount", "accelerations", "decelerations"].includes(metric)) return "כמות";
+  return "";
+}
+
+function getGpsAlertGroups(records) {
+  return [
+    {
+      title: "GPS גבוה",
+      tone: "red",
+      items: records.filter((record) => record.gpsLoad >= 800 || record.riskFlags.some((flag) => flag.includes("עומס GPS")))
+        .map((record) => ({ record, reason: `עומס GPS ${formatInteger(record.gpsLoad)}` }))
+    },
+    {
+      title: "HSR גבוה",
+      tone: "yellow",
+      items: records.filter((record) => record.highSpeedRunning >= 650)
+        .map((record) => ({ record, reason: `HSR ${formatInteger(record.highSpeedRunning)} מ׳` }))
+    },
+    {
+      title: "ספרינטים גבוהים",
+      tone: "yellow",
+      items: records.filter((record) => record.sprintDistance >= 180 || record.sprintCount >= 8)
+        .map((record) => ({ record, reason: `${formatInteger(record.sprintDistance)} מ׳ · ${formatInteger(record.sprintCount)} ספרינטים` }))
+    },
+    {
+      title: "Speed high",
+      tone: "green",
+      items: records.filter((record) => record.maxSpeed >= 32)
+        .map((record) => ({ record, reason: `${formatNumber(record.maxSpeed)} קמ״ש` }))
+    },
+    {
+      title: "Risk alerts",
+      tone: "red",
+      items: records.filter((record) => record.riskFlags.length)
+        .map((record) => ({ record, reason: record.riskFlags.join(", ") }))
+    }
+  ];
+}
+
+function renderGpsAlertGroups(records) {
+  const groups = getGpsAlertGroups(records);
+  if (!groups.some((group) => group.items.length)) return `<div class="surface empty">אין התראות GPS בסשן הנבחר</div>`;
+  return `
+    <div class="gps-alert-grid">
+      ${groups.map((group) => `
+        <article class="gps-alert-card ${escapeAttr(group.tone)}">
+          <div>
+            <span>${escapeHtml(group.title)}</span>
+            <strong>${escapeHtml(group.items.length)}</strong>
+          </div>
+          ${group.items.length ? group.items.slice(0, 4).map((item) => `
+            <p><b>${escapeHtml(item.record.playerName)}</b> · ${escapeHtml(item.reason)}</p>
+          `).join("") : `<p>אין התראות</p>`}
+        </article>
+      `).join("")}
+    </div>
+  `;
+}
+
+function formatGpsSessionType(type) {
+  if (type === "match" || type === "משחק") return "משחק";
+  if (type === "training" || type === "אימון") return "אימון";
+  if (type === "training_match" || type === "משחק אימון") return "משחק אימון";
+  return type || "לא מוגדר";
 }
 
 function renderGpsTable(records) {
@@ -3059,6 +6546,7 @@ function createAutoGpsMapping(headers) {
 }
 
 function mapGpsImportRows(importState) {
+  const setup = normalizeGpsSessionSetup(importState);
   return importState.rows.map((row) => {
     const mapped = {};
     GPS_FIELDS.forEach(([field]) => {
@@ -3067,6 +6555,8 @@ function mapGpsImportRows(importState) {
       mapped[field] = GPS_NUMERIC_FIELDS.has(field) ? parseFlexibleNumber(raw) : String(raw || "").trim();
     });
     mapped.date = parseFlexibleDate(mapped.date);
+    mapped.date = mapped.date || setup.date;
+    mapped.sessionName = mapped.sessionName || setup.sessionName;
     mapped.period = normalizeGpsPeriod(mapped.period);
     return mapped;
   });
@@ -3300,13 +6790,14 @@ function bindSettingsPage() {
 
 function coachShell(active, content) {
   const navItems = [
-    ["dashboard", "/coach", "דשבורד"],
-    ["players", "/coach/players", "שחקנים"],
-    ["reports", "/coach/reports", "דוחות"],
-    ["gps", "/coach/gps", "GPS"],
-    ["sessions", "/coach/sessions", "אימונים"],
-    ["settings", "/coach/settings", "הגדרות"],
-    ["report", "/report", "כניסת שחקן"]
+    ["home", "/coach", "תדרוך יומי", "◈"],
+    ["analytics", "/coach/analytics", "ניתוחים", "▥"],
+    ["players", "/coach/players", "שחקנים", "◉"],
+    ["reports", "/coach/reports", "דוחות", "▤"],
+    ["gps", "/coach/gps", "GPS", "📡"],
+    ["calendar", "/coach/calendar", "לוח שנה", "◌"],
+    ["settings", "/coach/settings", "הגדרות", "⚙"],
+    ["report", "/report", "כניסת שחקן", "↗"]
   ];
   return `
     <div class="app-frame">
@@ -3320,11 +6811,10 @@ function coachShell(active, content) {
             </div>
           </a>
           <nav class="nav-tabs" aria-label="ניווט">
-            ${navItems.map(([id, href, label]) => `
-              <a href="${href}" data-route class="nav-link ${active === id ? "active" : ""}">${label}</a>
+            ${navItems.map(([id, href, label, icon]) => `
+              <a href="${href}" data-route class="nav-link ${active === id ? "active" : ""}"><span aria-hidden="true">${escapeHtml(icon)}</span>${label}</a>
             `).join("")}
           </nav>
-          ${renderStorageStatus()}
         </div>
       </header>
       <main class="page">${content}</main>
@@ -3551,12 +7041,12 @@ function renderPainAreaRow(area, index) {
 }
 
 function renderCommentsList(comments) {
-  if (!comments.length) return `<div class="surface empty">אין הערות</div>`;
+  if (!comments.length) return `<div class="surface empty">אין הערות מהדוחות</div>`;
   return `
     <div class="surface mini-list">
       ${comments.map((report) => `
         <div class="mini-row">
-          <span>${escapeHtml(formatDateDisplay(report.date))}</span>
+          <span>${escapeHtml(formatDateDisplay(report.date))} · ${report.rpe !== undefined ? "דוח RPE" : "דוח מוכנות"}</span>
           <strong>${escapeHtml(report.comments)}</strong>
         </div>
       `).join("")}
@@ -3782,12 +7272,13 @@ function renderDualLineChart(series, keyA, keyB, labelA, labelB) {
 
 function renderScaleControl(name, min, max, selected) {
   const count = max - min + 1;
+  const selectedValue = selected === null || selected === undefined || selected === "" ? "" : Number(selected);
   return `
-    <input type="hidden" name="${escapeAttr(name)}" id="${escapeAttr(name)}" value="${escapeAttr(selected)}" />
+    <input type="hidden" name="${escapeAttr(name)}" id="${escapeAttr(name)}" value="${escapeAttr(selectedValue)}" />
     <div class="scale-control ${count === 10 ? "ten" : ""}" data-scale="${escapeAttr(name)}">
       ${Array.from({ length: count }, (_, index) => {
         const value = min + index;
-        return `<button class="scale-button ${value === selected ? "is-selected" : ""}" type="button" data-scale-value="${value}" aria-pressed="${value === selected ? "true" : "false"}">${value}</button>`;
+        return `<button class="scale-button ${value === selectedValue ? "is-selected" : ""}" type="button" data-scale-value="${value}" aria-pressed="${value === selectedValue ? "true" : "false"}">${value}</button>`;
       }).join("")}
     </div>
   `;
@@ -3812,6 +7303,8 @@ function resetScale(field, value) {
     button.classList.toggle("is-selected", selected);
     button.setAttribute("aria-pressed", selected ? "true" : "false");
   });
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
 function renderBodyMap(selected) {
@@ -3845,22 +7338,79 @@ function renderBodyMap(selected) {
 }
 
 function bindBodyMap() {
+  const select = document.getElementById("painArea");
+  const side = document.getElementById("painSide");
+  const intensity = document.getElementById("painIntensity");
   document.querySelectorAll("[data-pain-area]").forEach((button) => {
     button.addEventListener("click", () => {
       const area = button.getAttribute("data-pain-area");
-      const select = document.getElementById("painArea");
-      select.value = area;
+      if (select) select.value = area;
       updateBodyMapSelection(area);
+      updatePainDetails(area);
     });
   });
-  const select = document.getElementById("painArea");
-  if (select) select.addEventListener("change", () => updateBodyMapSelection(select.value));
+  if (select) select.addEventListener("change", () => {
+    updateBodyMapSelection(select.value);
+    updatePainDetails(select.value);
+  });
+  if (side) side.addEventListener("change", () => updatePainSummary());
+  if (intensity) intensity.addEventListener("change", () => updatePainSummary());
+  if (select) updatePainDetails(select.value);
 }
 
 function updateBodyMapSelection(area) {
   document.querySelectorAll("[data-pain-area]").forEach((button) => {
     button.classList.toggle("is-selected", button.getAttribute("data-pain-area") === area);
   });
+}
+
+function updatePainDetails(area) {
+  const hasPain = area && area !== NO_PAIN;
+  const panel = document.getElementById("painDetailsPanel");
+  const side = document.getElementById("painSide");
+  const intensity = document.getElementById("painIntensity");
+  const detailed = document.getElementById("detailedPainArea");
+  if (panel) panel.classList.toggle("is-hidden", !hasPain);
+  if (side) {
+    side.disabled = !hasPain;
+    if (hasPain && !side.value) side.value = "דו צדדי";
+    if (!hasPain) side.value = "";
+  }
+  if (intensity) {
+    intensity.disabled = !hasPain;
+    if (!hasPain) resetScale("painIntensity", "");
+  }
+  if (detailed) detailed.value = hasPain ? area : "";
+  hidePainValidation();
+  updatePainSummary();
+}
+
+function updatePainSummary() {
+  const area = document.getElementById("painArea")?.value || NO_PAIN;
+  const side = document.getElementById("painSide")?.value || "";
+  const intensity = document.getElementById("painIntensity")?.value || "";
+  const selectedArea = document.getElementById("painSelectedArea");
+  const selectedSide = document.getElementById("painSelectedSide");
+  const selectedIntensity = document.getElementById("painSelectedIntensity");
+  if (selectedArea) selectedArea.textContent = area && area !== NO_PAIN ? area : "אין כאב";
+  if (selectedSide) selectedSide.textContent = area && area !== NO_PAIN ? side || "לא נבחר" : "לא נדרש";
+  if (selectedIntensity) selectedIntensity.textContent = area && area !== NO_PAIN ? intensity ? `${intensity}/10` : "לא נבחר" : "לא נדרש";
+}
+
+function showPainValidation(message) {
+  const validation = document.getElementById("painValidation");
+  if (validation) {
+    validation.textContent = message;
+    validation.classList.add("show");
+  }
+}
+
+function hidePainValidation() {
+  const validation = document.getElementById("painValidation");
+  if (validation) {
+    validation.textContent = "";
+    validation.classList.remove("show");
+  }
 }
 
 function filterSelect(id, label, labels, selected, values) {
@@ -4032,6 +7582,9 @@ function getReadinessRiskFlags(report) {
   if (Number(report.mood) <= 2) flags.push("מוטיבציה נמוכה");
   if (Number(report.soreness) >= settings.sorenessHigh) flags.push("כאבי שריר גבוהים");
   if (Number(report.loadFeeling) >= 4) flags.push("תחושת עומס גבוהה");
+  if (report.painArea && report.painArea !== NO_PAIN) flags.push(`כאב ב${report.painArea}`);
+  if (Number(report.painIntensity) >= 8) flags.push("עוצמת כאב גבוהה");
+  else if (Number(report.painIntensity) >= 6) flags.push("עוצמת כאב בינונית");
   if (report.medicalLimitation) flags.push("מגבלה רפואית");
   if (report.hydration && report.hydration.tone === "yellow") flags.push("אובדן נוזלים");
   if (report.hydration && report.hydration.tone === "red") flags.push("סיכון התייבשות");
@@ -4048,6 +7601,9 @@ function calculateReadinessScore(report) {
   if (Number(report.mood) <= 2) score -= 10;
   if (Number(report.soreness) >= 4) score -= 15;
   if (Number(report.loadFeeling) >= 4) score -= 10;
+  if (report.painArea && report.painArea !== NO_PAIN) score -= 10;
+  if (Number(report.painIntensity) >= 8) score -= 20;
+  else if (Number(report.painIntensity) >= 6) score -= 10;
   if (report.medicalLimitation) score -= 25;
   if (report.hydration && report.hydration.lossPercent > 2) score -= 20;
   else if (report.hydration && report.hydration.lossPercent > 1) score -= 10;
@@ -4131,7 +7687,7 @@ function weeklyLoadRiskBadge(changePercent) {
 
 function getReadinessStatus(score) {
   if (score >= 80) return { label: "מוכן לאימון", short: "מוכן", tone: "green" };
-  if (score >= 60) return { label: "לשים לב", short: "לשים לב", tone: "yellow" };
+  if (score >= 60) return { label: "דורש מעקב", short: "מעקב", tone: "yellow" };
   return { label: "לבדוק לפני אימון", short: "לבדוק", tone: "red" };
 }
 

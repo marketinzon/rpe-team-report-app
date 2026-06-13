@@ -16,10 +16,12 @@ const routes = [
   "/report/pre",
   "/report/post",
   "/coach",
+  "/coach/analytics",
   "/coach/players",
   "/coach/reports",
   "/coach/player/p2",
   "/coach/gps",
+  "/coach/calendar",
   "/coach/sessions",
   "/coach/settings"
 ];
