@@ -8,8 +8,10 @@
     "dev": "node server.mjs",
     "preview": "node server.mjs",
     "start": "node server.mjs",
-    "check": "node --check assets/app.js && node --check server.mjs && node --check scripts/build.mjs && node --check scripts/verify-routes.mjs",
-    "check:prod": "node scripts/build.mjs && node scripts/verify-routes.mjs"
+    "check": "node --check assets/app.js && node --check assets/daily-pdf.js && node --check assets/demo-data.js && node --check api/admin.js && node --check server.mjs && node --check scripts/build.mjs && node --check scripts/seed-auth-users.mjs && node --check scripts/verify-supabase-setup.mjs && node --check scripts/verify-routes.mjs && node --check scripts/verify-team-isolation.mjs && node scripts/verify-demo-data.mjs && node scripts/verify-team-isolation.mjs",
+    "seed:auth-users": "node scripts/seed-auth-users.mjs",
+    "verify:supabase": "node scripts/verify-supabase-setup.mjs",
+    "check:prod": "node scripts/build.mjs && node scripts/verify-routes.mjs && node scripts/verify-team-isolation.mjs"
   },
   "engines": {
     "node": ">=20"

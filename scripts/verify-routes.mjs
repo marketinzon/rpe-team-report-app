@@ -15,6 +15,7 @@ const routes = [
   "/report",
   "/report/pre",
   "/report/post",
+  "/coach/login",
   "/coach",
   "/coach/analytics",
   "/coach/players",
@@ -23,6 +24,7 @@ const routes = [
   "/coach/gps",
   "/coach/calendar",
   "/coach/sessions",
+  "/coach/admin",
   "/coach/settings"
 ];
 

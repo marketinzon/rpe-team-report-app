@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { handleAdminApiRequest } from "./api/admin.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -59,7 +60,7 @@ function booleanEnv(value, fallback) {
 }
 
 async function createRuntimeEnvScript() {
-  const values = await loadDotEnvValues();
+  const values = localDotEnvValues;
   const storageDriver = String(envValue(values, "RPE_STORAGE_DRIVER", "local")).toLowerCase();
   const config = {
     appName: envValue(values, "RPE_APP_NAME", "דוח RPE קבוצתי"),
@@ -90,9 +91,18 @@ function resolveRequestPath(requestUrl) {
   return path.join(__dirname, "index.html");
 }
 
+const localDotEnvValues = await loadDotEnvValues();
+Object.entries(localDotEnvValues).forEach(([key, value]) => {
+  if (process.env[key] === undefined) process.env[key] = value;
+});
+
 const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url || "/", `http://localhost:${port}`);
+    if (url.pathname === "/api/admin") {
+      await handleAdminApiRequest(req, res);
+      return;
+    }
     if (url.pathname === "/assets/env.js") {
       const script = await createRuntimeEnvScript();
       res.writeHead(200, {

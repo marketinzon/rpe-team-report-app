@@ -1,6 +1,34 @@
+import {
+  DEMO_DATA_PREFIX,
+  DEMO_DATASET_VERSION,
+  MONTH_DEMO_PLAYERS,
+  createMonthDemoDataset,
+  isLegacyBuiltInDemoId,
+  isMonthDemoId
+} from "./demo-data.js";
+import { downloadDailyCoachPdf } from "./daily-pdf.js";
+
 const STORE_KEY = "rpe-team-report-state-v1";
 const PLAYER_SESSION_KEY = "rpe-player-session-v2";
+const PLAYER_TEAM_KEY = "rpe-player-team-v1";
+const COACH_SESSION_KEY = "rpe-coach-session-v1";
 const CALENDAR_LOAD_PLANS_KEY = "rpe-calendar-load-plans-v1";
+const COACH_SIDEBAR_STATE_KEY = "rpe-coach-sidebar-collapsed-v1";
+const DEFAULT_DEMO_TEAM_ID = "00000000-0000-4000-8000-000000000001";
+const OWNER_ADMIN_TABS = ["teams", "coaches", "players", "permissions"];
+const TEAM_ROLES = ["team_admin", "coach", "viewer"];
+const TEAM_ROLE_LABELS = {
+  owner: "בעלים",
+  team_admin: "מנהל קבוצה",
+  coach: "מאמן",
+  viewer: "צפייה בלבד"
+};
+const TEAM_ROLE_DESCRIPTIONS = {
+  owner: "גישה מלאה לכל הקבוצות והמערכת",
+  team_admin: "ניהול שחקנים, PINים והגדרות בקבוצה המשויכת",
+  coach: "צפייה, דוחות, GPS והעלאת נתוני ביצוע",
+  viewer: "קריאה בלבד ללא עריכה"
+};
 const RAW_RPE_ENV = window.RPE_ENV || null;
 const STORAGE_DIAGNOSTICS = {
   envLoaded: Boolean(RAW_RPE_ENV),
@@ -68,16 +96,15 @@ const FOOTBALL_PAIN_REGIONS = [
   { id: "achilles-left", area: "אכילס", view: "back", shape: "rect", x: 118, y: 342, w: 18, h: 24, labelX: 138, labelY: 354 }
 ];
 
-const DEFAULT_PLAYERS = [
-  { id: "p1", name: "עומר", active: true, pin: "1111" },
-  { id: "p2", name: "אביב", active: true, pin: "2222" },
-  { id: "p3", name: "שי", active: true, pin: "3333" },
-  { id: "p4", name: "שחר", active: true, pin: "4444" },
-  { id: "p5", name: "אלון", active: true, pin: "5555" },
-  { id: "p6", name: "יואב", active: true, pin: "6666" },
-  { id: "p7", name: "גיא", active: true, pin: "7777" },
-  { id: "p8", name: "יגל", active: true, pin: "8888" },
-  { id: "p9", name: "בר", active: true, pin: "9999" }
+const DEFAULT_PLAYERS = MONTH_DEMO_PLAYERS.map((player) => ({ ...player }));
+
+const PLAYER_POSITIONS = [
+  ["שוער", "Goalkeeper"],
+  ["בלם", "Defender"],
+  ["מגן", "Full Back"],
+  ["קשר", "Midfielder"],
+  ["כנף", "Winger"],
+  ["חלוץ", "Striker"]
 ];
 
 const DEFAULT_SETTINGS = {
@@ -205,7 +232,8 @@ const uiState = {
     playerId: "all",
     position: "all",
     period: "all",
-    metric: "totalDistance"
+    metric: "totalDistance",
+    initializedSession: false
   },
   calendar: {
     view: "month",
@@ -217,15 +245,27 @@ const uiState = {
   gpsImport: null,
   gpsImportModalOpen: false,
   gpsSessionSetup: createDefaultGpsSessionSetup(),
-  sessionEditId: null
+  sessionEditId: null,
+  ownerAdmin: {
+    tab: "teams",
+    teamFilter: "all",
+    loading: false,
+    error: "",
+    notice: "",
+    teams: [],
+    coaches: [],
+    players: [],
+    owners: []
+  }
 };
 
 const app = document.getElementById("app");
-let supabaseStatus = isSupabaseMode() ? "loading" : "local";
+let supabaseStatus = isSupabaseMode() ? "idle" : "local";
 let supabaseError = "";
 let supabaseFatalError = false;
 let supabaseSaveTimer = null;
 let supabaseClient = null;
+let coachSession = loadCoachSession();
 let state = isSupabaseMode() ? createEmptyState() : loadState();
 logRuntimeStartup();
 
@@ -254,15 +294,46 @@ document.addEventListener("click", (event) => {
   event.preventDefault();
   navigate(url.pathname);
 });
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  const shell = document.querySelector("[data-coach-shell]");
+  if (!shell?.classList.contains("sidebar-mobile-open")) return;
+  shell.classList.remove("sidebar-mobile-open");
+  shell.querySelector("[data-sidebar-mobile-toggle]")?.setAttribute("aria-expanded", "false");
+  document.body.classList.remove("coach-menu-open");
+});
 
-if (isSupabaseMode()) {
-  bootstrapSupabaseState();
+startApplication();
+
+async function startApplication() {
+  if (!isSupabaseMode()) {
+    render();
+    return;
+  }
+  await restoreCoachSession();
+  if (shouldLoadSupabaseStateForCurrentRoute()) {
+    await bootstrapSupabaseState();
+    return;
+  }
+  render();
 }
-render();
 
 function render() {
   if (!isSupabaseMode()) {
     state = loadState();
+  }
+  const path = normalizePath(window.location.pathname);
+  if (path === "/coach/login") {
+    renderCoachLogin();
+    return;
+  }
+  if (isCoachRoute(path) && requiresCoachLogin() && !coachSession) {
+    renderCoachLogin();
+    return;
+  }
+  if (isSupabaseMode() && isCoachRoute(path) && coachSession && supabaseStatus === "idle") {
+    bootstrapSupabaseState();
+    return;
   }
   if (isSupabaseMode() && supabaseStatus === "loading") {
     renderLoadingScreen("טוען נתונים מ-Supabase...");
@@ -272,7 +343,6 @@ function render() {
     renderStorageError();
     return;
   }
-  const path = normalizePath(window.location.pathname);
   if (path === "/" || path === "/index.html") {
     navigate("/report", true);
     return;
@@ -339,11 +409,315 @@ function render() {
     return;
   }
 
+  if (path === "/coach/admin") {
+    if (!isPlatformOwner()) {
+      renderAccessDenied();
+      return;
+    }
+    renderOwnerAdminPage();
+    return;
+  }
+
   renderNotFound();
 }
 
 function normalizePath(path) {
   return path.endsWith("/") && path.length > 1 ? path.slice(0, -1) : path;
+}
+
+function isCoachRoute(path) {
+  return path === "/coach" || path.startsWith("/coach/");
+}
+
+function requiresCoachLogin() {
+  return isSupabaseMode();
+}
+
+function shouldLoadSupabaseStateForCurrentRoute() {
+  if (!isSupabaseMode()) return false;
+  const path = normalizePath(window.location.pathname);
+  if (isCoachRoute(path)) return Boolean(coachSession);
+  if (path === "/report" || path.startsWith("/report/")) return Boolean(coachSession);
+  return false;
+}
+
+function getActiveTeamId() {
+  const playerTeam = getPlayerTeamContext();
+  return coachSession?.teamId || playerTeam?.teamId || APP_CONFIG.teamId;
+}
+
+function getActiveTeamName() {
+  const playerTeam = getPlayerTeamContext();
+  return coachSession?.teamName || playerTeam?.teamName || APP_CONFIG.teamName;
+}
+
+function getActiveTeamSlug() {
+  const playerTeam = getPlayerTeamContext();
+  return coachSession?.teamSlug || playerTeam?.teamSlug || slugify(getActiveTeamName());
+}
+
+function getActiveCoachName() {
+  return coachSession?.coachName || coachSession?.email || "צוות מקצועי";
+}
+
+function isPlatformOwner() {
+  return Boolean(coachSession?.isOwner || coachSession?.platformRole === "owner" || coachSession?.role === "owner");
+}
+
+function getCoachTeams() {
+  return Array.isArray(coachSession?.teams) ? coachSession.teams : [];
+}
+
+function getActiveTeamAssignment() {
+  const teams = getCoachTeams();
+  return teams.find((team) => team.id === getActiveTeamId()) || teams[0] || null;
+}
+
+function getActiveTeamRole() {
+  if (isPlatformOwner()) return "owner";
+  return coachSession?.role || getActiveTeamAssignment()?.role || "coach";
+}
+
+function getRoleLabel(role) {
+  return TEAM_ROLE_LABELS[role] || role || "מאמן";
+}
+
+function canManageSystem() {
+  return isPlatformOwner();
+}
+
+function canManageCurrentTeam() {
+  return isPlatformOwner() || getActiveTeamRole() === "team_admin";
+}
+
+function canWriteOperationalData() {
+  return isPlatformOwner() || ["team_admin", "coach"].includes(getActiveTeamRole());
+}
+
+function isReadOnlyCoach() {
+  return isSupabaseMode() && getActiveTeamRole() === "viewer";
+}
+
+function getPlayerTeamContext() {
+  try {
+    const raw = localStorage.getItem(PLAYER_TEAM_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || !parsed.teamId) return null;
+    return parsed;
+  } catch (error) {
+    return null;
+  }
+}
+
+function setPlayerTeamContext(context) {
+  try {
+    if (!context || !context.teamId) {
+      localStorage.removeItem(PLAYER_TEAM_KEY);
+      return;
+    }
+    localStorage.setItem(PLAYER_TEAM_KEY, JSON.stringify({
+      teamId: context.teamId,
+      teamName: context.teamName || APP_CONFIG.teamName,
+      teamSlug: context.teamSlug || slugify(context.teamName || APP_CONFIG.teamName)
+    }));
+  } catch (error) {
+    console.warn("[Player Team] Failed to persist team context", error);
+  }
+}
+
+function loadCoachSession() {
+  try {
+    const raw = localStorage.getItem(COACH_SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || !parsed.accessToken || !parsed.userId || !parsed.teamId) return null;
+    return parsed;
+  } catch (error) {
+    return null;
+  }
+}
+
+function saveCoachSession(session) {
+  coachSession = session;
+  supabaseClient = null;
+  try {
+    if (session) {
+      localStorage.setItem(COACH_SESSION_KEY, JSON.stringify(session));
+    } else {
+      localStorage.removeItem(COACH_SESSION_KEY);
+    }
+  } catch (error) {
+    console.warn("[Coach Auth] Failed to persist session", error);
+  }
+}
+
+function clearCoachSession() {
+  saveCoachSession(null);
+  state = createEmptyState();
+  supabaseStatus = isSupabaseMode() ? "idle" : "local";
+}
+
+async function restoreCoachSession() {
+  if (!coachSession) return null;
+  if (!isCoachSessionExpiring(coachSession)) return coachSession;
+  try {
+    return await refreshCoachSession();
+  } catch (error) {
+    console.warn("[Coach Auth] Session refresh failed", error);
+    clearCoachSession();
+    return null;
+  }
+}
+
+function isCoachSessionExpiring(session) {
+  const expiresAt = Number(session?.expiresAt || 0);
+  if (!expiresAt) return false;
+  return expiresAt * 1000 < Date.now() + 60_000;
+}
+
+async function refreshCoachSession() {
+  if (!coachSession?.refreshToken) throw new Error("אין refresh token לשחזור התחברות.");
+  const auth = await supabaseAuthRequest("token?grant_type=refresh_token", {
+    method: "POST",
+    body: JSON.stringify({ refresh_token: coachSession.refreshToken })
+  });
+  const baseSession = buildAuthSession(auth, coachSession.email);
+  const enriched = await enrichCoachSession(baseSession);
+  saveCoachSession(enriched);
+  return enriched;
+}
+
+function buildAuthSession(auth, emailFallback = "") {
+  const user = auth.user || {};
+  return {
+    accessToken: auth.access_token,
+    refreshToken: auth.refresh_token || "",
+    expiresAt: auth.expires_at || Math.floor(Date.now() / 1000) + Number(auth.expires_in || 3600),
+    userId: user.id || auth.user_id || "",
+    email: user.email || emailFallback || "",
+    coachId: "",
+    coachName: "",
+    teamId: "",
+    teamName: "",
+    teamSlug: "",
+    role: "coach",
+    isOwner: false,
+    platformRole: "",
+    teams: []
+  };
+}
+
+async function enrichCoachSession(session) {
+  const previousSession = coachSession;
+  coachSession = session;
+  supabaseClient = null;
+  try {
+    const context = await loadCoachSessionContext();
+    const teams = normalizeCoachTeams(context.teams || []);
+    if (!teams.length) throw new Error("לא נמצאה קבוצה פעילה למשתמש הזה.");
+    const previousTeamId = previousSession?.teamId || "";
+    const selectedTeam = teams.find((team) => team.id === previousTeamId) || teams[0];
+    return {
+      ...session,
+      coachId: selectedTeam.coachId || context.coachId || "",
+      coachName: context.coachName || context.email || session.email || "צוות מקצועי",
+      email: context.email || session.email || "",
+      role: context.isOwner ? "owner" : selectedTeam.role || context.role || "coach",
+      isOwner: Boolean(context.isOwner),
+      platformRole: context.isOwner ? "owner" : "",
+      teamId: selectedTeam.id,
+      teamName: selectedTeam.name,
+      teamSlug: selectedTeam.slug || slugify(selectedTeam.name),
+      teams
+    };
+  } catch (error) {
+    coachSession = previousSession;
+    supabaseClient = null;
+    throw error;
+  }
+}
+
+async function loadCoachSessionContext() {
+  try {
+    const payload = await supabaseRpc("coach_session_context", {});
+    return normalizeRpcPayload(payload);
+  } catch (error) {
+    console.warn("[Coach Auth] coach_session_context RPC unavailable; falling back to direct coach lookup", error);
+    const coachRows = await supabaseSelect("coaches", `user_id=eq.${encodeURIComponent(coachSession.userId)}&active=eq.true&select=id,team_id,name,email,role`);
+    if (!coachRows.length) throw error;
+    const teamIds = unique(coachRows.map((row) => row.team_id).filter(Boolean));
+    const teamRows = await supabaseSelect("teams", `id=in.(${teamIds.map((id) => encodeURIComponent(id)).join(",")})&active=eq.true&select=id,name,slug,active`);
+    return {
+      isOwner: false,
+      role: coachRows[0]?.role || "coach",
+      coachId: coachRows[0]?.id || "",
+      coachName: coachRows[0]?.name || coachRows[0]?.email || coachSession.email || "צוות מקצועי",
+      email: coachRows[0]?.email || coachSession.email || "",
+      teams: teamRows.map((team) => {
+        const assignment = coachRows.find((row) => row.team_id === team.id) || {};
+        return { ...team, role: assignment.role || "coach", coachId: assignment.id || "" };
+      })
+    };
+  }
+}
+
+function normalizeCoachTeams(teams) {
+  return (Array.isArray(teams) ? teams : []).map((team) => ({
+    id: team.id,
+    name: team.name || "קבוצה",
+    slug: team.slug || slugify(team.name || "team"),
+    active: team.active !== false,
+    role: team.role || "coach",
+    coachId: team.coachId || team.coach_id || ""
+  })).filter((team) => team.id);
+}
+
+async function supabaseAuthPasswordLogin(email, password) {
+  const auth = await supabaseAuthRequest("token?grant_type=password", {
+    method: "POST",
+    body: JSON.stringify({ email, password })
+  });
+  const baseSession = buildAuthSession(auth, email);
+  if (!baseSession.accessToken || !baseSession.userId) {
+    throw new Error("תגובה לא תקינה מ-Supabase Auth.");
+  }
+  return enrichCoachSession(baseSession);
+}
+
+async function supabaseAuthLogout() {
+  if (!coachSession?.accessToken) return;
+  try {
+    await supabaseAuthRequest("logout", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${coachSession.accessToken}`
+      }
+    });
+  } catch (error) {
+    console.warn("[Coach Auth] Supabase logout failed; clearing local session anyway", error);
+  }
+}
+
+async function supabaseAuthRequest(path, options = {}) {
+  ensureSupabaseConfig();
+  const baseUrl = APP_CONFIG.supabaseUrl.replace(/\/$/, "");
+  const headers = {
+    apikey: APP_CONFIG.supabasePublishableKey,
+    "Content-Type": "application/json",
+    ...(options.headers || {})
+  };
+  const response = await fetch(`${baseUrl}/auth/v1/${path}`, { ...options, headers });
+  const text = await response.text();
+  if (!response.ok) {
+    console.error("[Coach Auth] Supabase Auth request failed", {
+      path,
+      status: response.status,
+      response: text
+    });
+    throw new Error(text || `Supabase Auth failed: ${response.status}`);
+  }
+  return text ? JSON.parse(text) : {};
 }
 
 function navigate(path, replace = false) {
@@ -381,8 +755,10 @@ function getCoachPlayerProfileTabs() {
 }
 
 function mount(html, bind) {
+  document.body.classList.remove("coach-menu-open");
   app.innerHTML = html;
   if (typeof bind === "function") bind();
+  bindCoachNavigation();
 }
 
 function renderLoadingScreen(message = "טוען נתונים...") {
@@ -405,6 +781,99 @@ function renderStorageError() {
     </main>
   `, () => {
     document.getElementById("retrySupabase").addEventListener("click", bootstrapSupabaseState);
+  });
+}
+
+function renderCoachLogin() {
+  mount(`
+    <main class="coach-login-page">
+      <section class="coach-login-shell">
+        <div class="coach-login-brand">
+          <span class="coach-sidebar-mark" aria-hidden="true">R</span>
+          <div>
+            <span class="eyebrow">מרכז צוות מקצועי</span>
+            <h1>דוח RPE קבוצתי</h1>
+            <p>כניסה מאובטחת למאמנים לפי צוות. כל מאמן רואה רק את נתוני הקבוצה שהוגדרה לו.</p>
+          </div>
+        </div>
+        <form id="coachLoginForm" class="surface coach-login-card" autocomplete="on">
+          <div class="form-intro">
+            <h2>כניסת צוות מקצועי</h2>
+            <p>${isSupabaseMode() ? "התחבר עם משתמש Supabase Auth שהוקצה לצוות שלך." : "מצב מקומי לפיתוח בלבד. בפרודקשן יש להשתמש ב-Supabase Auth."}</p>
+          </div>
+          <div class="field">
+            <label for="coachEmail">אימייל / שם משתמש</label>
+            <input id="coachEmail" name="email" type="email" inputmode="email" autocomplete="username" required />
+          </div>
+          <div class="field">
+            <label for="coachPassword">סיסמה</label>
+            <input id="coachPassword" name="password" type="password" autocomplete="current-password" required />
+          </div>
+          <button class="btn primary" type="submit">כניסה</button>
+          <a href="/report" data-route class="btn secondary">כניסת שחקן</a>
+          <div id="coachLoginError" class="success-box danger-box" role="alert"></div>
+        </form>
+      </section>
+    </main>
+  `, bindCoachLogin);
+}
+
+function bindCoachLogin() {
+  const form = document.getElementById("coachLoginForm");
+  const errorBox = document.getElementById("coachLoginError");
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const button = form.querySelector("button[type='submit']");
+    const data = new FormData(form);
+    const email = String(data.get("email") || "").trim();
+    const password = String(data.get("password") || "");
+    if (!email || !password) return;
+    button.disabled = true;
+    button.textContent = "מתחבר...";
+    errorBox.classList.remove("show");
+    errorBox.textContent = "";
+    try {
+      if (isSupabaseMode()) {
+        const session = await supabaseAuthPasswordLogin(email, password);
+        saveCoachSession(session);
+        setPlayerTeamContext({ teamId: session.teamId, teamName: session.teamName, teamSlug: session.teamSlug });
+        supabaseStatus = "idle";
+        await bootstrapSupabaseState();
+        navigate("/coach", true);
+        return;
+      }
+      saveCoachSession({
+        accessToken: "local-dev",
+        refreshToken: "",
+        expiresAt: 0,
+        userId: "local-dev",
+        email,
+        coachId: "local-dev",
+        coachName: email,
+        teamId: APP_CONFIG.teamId,
+        teamName: APP_CONFIG.teamName,
+        teamSlug: slugify(APP_CONFIG.teamName),
+        role: "owner",
+        isOwner: true,
+        platformRole: "owner",
+        teams: [{
+          id: APP_CONFIG.teamId,
+          name: APP_CONFIG.teamName,
+          slug: slugify(APP_CONFIG.teamName),
+          active: true,
+          role: "owner",
+          coachId: "local-dev"
+        }]
+      });
+      navigate("/coach", true);
+    } catch (error) {
+      console.error("[Coach Auth] login failed", error);
+      errorBox.textContent = error.message || "התחברות נכשלה. בדוק אימייל וסיסמה.";
+      errorBox.classList.add("show");
+    } finally {
+      button.disabled = false;
+      button.textContent = "כניסה";
+    }
   });
 }
 
@@ -432,7 +901,7 @@ function getStorageStatus() {
   if (supabaseStatus === "connected") {
     return {
       label: "Supabase connected",
-      detail: `מחובר ל-Supabase · Team ${APP_CONFIG.teamId}`,
+      detail: `מחובר ל-Supabase · Team ${getActiveTeamId()}`,
       tone: "green",
       dot: "green"
     };
@@ -494,6 +963,8 @@ function renderStorageDiagnosticsPanel() {
         ${diagnosticItem("Supabase URL קיים", yesNo(STORAGE_DIAGNOSTICS.supabaseUrlPresent), STORAGE_DIAGNOSTICS.supabaseUrlPresent ? "green" : "red")}
         ${diagnosticItem("Supabase key קיים", yesNo(STORAGE_DIAGNOSTICS.supabaseKeyPresent), STORAGE_DIAGNOSTICS.supabaseKeyPresent ? "green" : "red")}
         ${diagnosticItem("Supabase client initialized", yesNo(STORAGE_DIAGNOSTICS.supabaseClientInitialized), STORAGE_DIAGNOSTICS.supabaseClientInitialized ? "green" : "yellow")}
+        ${diagnosticItem("צוות פעיל", `${getActiveTeamName()} · ${getActiveTeamId()}`, getActiveTeamId() ? "green" : "red")}
+        ${diagnosticItem("מאמן מחובר", coachSession ? getActiveCoachName() : "אין", coachSession ? "green" : "yellow")}
         ${diagnosticItem("שגיאת Supabase אחרונה", STORAGE_DIAGNOSTICS.lastSupabaseError || "אין", STORAGE_DIAGNOSTICS.lastSupabaseError ? "red" : "green")}
       </div>
       <div class="actions">
@@ -554,7 +1025,7 @@ function logRuntimeStartup() {
     selected: STORAGE_DIAGNOSTICS.selectedStorageDriver,
     supabaseUrlPresent: STORAGE_DIAGNOSTICS.supabaseUrlPresent,
     supabaseKeyPresent: STORAGE_DIAGNOSTICS.supabaseKeyPresent,
-    teamId: APP_CONFIG.teamId
+    teamId: getActiveTeamId()
   });
 }
 
@@ -564,7 +1035,8 @@ function createSupabaseRestClient() {
   console.info("[RPE Runtime] Supabase client creation", {
     baseUrlPresent: Boolean(baseUrl),
     publishableKeyPresent: Boolean(APP_CONFIG.supabasePublishableKey),
-    teamId: APP_CONFIG.teamId
+    teamId: getActiveTeamId(),
+    authenticatedCoach: Boolean(coachSession?.accessToken)
   });
   STORAGE_DIAGNOSTICS.supabaseClientInitialized = true;
   return {
@@ -572,7 +1044,8 @@ function createSupabaseRestClient() {
       const method = options.method || "GET";
       const headers = {
         apikey: APP_CONFIG.supabasePublishableKey,
-        Authorization: `Bearer ${APP_CONFIG.supabasePublishableKey}`,
+        Authorization: getSupabaseAuthorizationHeader(),
+        ...getSupabasePlayerAccessHeaders(),
         ...options.headers
       };
       const response = await fetch(`${baseUrl}/rest/v1/${path}`, { ...options, headers });
@@ -593,6 +1066,21 @@ function createSupabaseRestClient() {
   };
 }
 
+function getSupabaseAuthorizationHeader() {
+  return `Bearer ${coachSession?.accessToken || APP_CONFIG.supabasePublishableKey}`;
+}
+
+function getSupabasePlayerAccessHeaders() {
+  if (coachSession) return {};
+  const session = getPlayerSession();
+  if (!session?.playerId || !session?.teamId || !session?.pin) return {};
+  return {
+    "x-rpe-team-id": session.teamId,
+    "x-rpe-player-id": session.playerId,
+    "x-rpe-player-pin": session.pin
+  };
+}
+
 function ensureSupabaseClient() {
   if (!supabaseClient) {
     supabaseClient = createSupabaseRestClient();
@@ -601,13 +1089,20 @@ function ensureSupabaseClient() {
 }
 
 function createInitialState() {
-  return APP_CONFIG.seedDemoData ? createDemoState() : createEmptyState();
+  return APP_CONFIG.seedDemoData ? createMonthDemoState() : createEmptyState();
 }
 
 function createEmptyState() {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     seededAt: new Date().toISOString(),
+    team: {
+      id: getActiveTeamId(),
+      name: getActiveTeamName(),
+      slug: getActiveTeamSlug(),
+      active: true
+    },
+    demoDataset: null,
     players: [],
     painAreas: [...DEFAULT_PAIN_AREAS],
     settings: { ...DEFAULT_SETTINGS },
@@ -643,28 +1138,44 @@ function loadState() {
 
 function normalizeState(data) {
   const defaultPinById = new Map(DEFAULT_PLAYERS.map((player) => [player.id, player.pin]));
+  const defaultPlayerById = new Map(DEFAULT_PLAYERS.map((player) => [player.id, player]));
   const fallbackPlayers = APP_CONFIG.seedDemoData ? DEFAULT_PLAYERS : [];
   const sourcePlayers = Array.isArray(data.players) ? data.players : fallbackPlayers;
   const players = sourcePlayers.map((player, index) => ({
     id: player.id || createId("p"),
+    teamId: player.teamId || getActiveTeamId(),
     name: player.name || `שחקן ${index + 1}`,
     active: player.active !== false,
-    pin: normalizePin(player.pin || defaultPinById.get(player.id) || "1234")
+    pin: normalizePin(player.pin || defaultPinById.get(player.id) || "1234"),
+    position: normalizePlayerPosition(player.position || defaultPlayerById.get(player.id)?.position || "")
   }));
 
-  const reports = Array.isArray(data.reports) ? data.reports.map((report) => ({
-    ...report,
-    completedFullSession: report.completedFullSession || "מלא",
-    fatigue: Number(report.fatigue ?? report.fatigueAfterTraining ?? 0),
-    soreness: Number(report.soreness ?? report.sorenessAfterTraining ?? 0),
-    painArea: report.painArea || NO_PAIN,
-    bodyWeightAfter: report.bodyWeightAfter === undefined || report.bodyWeightAfter === "" ? null : Number(report.bodyWeightAfter),
-    comments: report.comments || ""
-  })) : [];
+  const reports = Array.isArray(data.reports) ? data.reports.map((report) => {
+    const painArea = report.painArea || NO_PAIN;
+    return {
+      ...report,
+      completedFullSession: report.completedFullSession || "מלא",
+      fatigue: Number(report.fatigue ?? report.fatigueAfterTraining ?? 0),
+      soreness: Number(report.soreness ?? report.sorenessAfterTraining ?? 0),
+      painArea,
+      detailedPainArea: painArea === NO_PAIN ? "" : report.detailedPainArea || painArea,
+      painSide: painArea === NO_PAIN ? "" : report.painSide || "דו צדדי",
+      painIntensity: painArea === NO_PAIN || report.painIntensity === undefined || report.painIntensity === "" ? null : Number(report.painIntensity),
+      bodyWeightAfter: report.bodyWeightAfter === undefined || report.bodyWeightAfter === "" ? null : Number(report.bodyWeightAfter),
+      comments: report.comments || ""
+    };
+  }) : [];
 
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     seededAt: data.seededAt || new Date().toISOString(),
+    team: data.team || {
+      id: getActiveTeamId(),
+      name: getActiveTeamName(),
+      slug: getActiveTeamSlug(),
+      active: true
+    },
+    demoDataset: data.demoDataset || null,
     players,
     painAreas: unique([...(Array.isArray(data.painAreas) ? data.painAreas : []), ...DEFAULT_PAIN_AREAS]),
     settings: { ...DEFAULT_SETTINGS, ...(data.settings || {}) },
@@ -693,7 +1204,7 @@ function normalizeLoadPlanValue(value) {
 
 function loadCalendarLoadPlans() {
   try {
-    return normalizeCalendarLoadPlans(JSON.parse(localStorage.getItem(CALENDAR_LOAD_PLANS_KEY) || "{}"));
+    return normalizeCalendarLoadPlans(JSON.parse(localStorage.getItem(getCalendarLoadPlansKey()) || "{}"));
   } catch (error) {
     return {};
   }
@@ -701,10 +1212,14 @@ function loadCalendarLoadPlans() {
 
 function persistCalendarLoadPlans() {
   try {
-    localStorage.setItem(CALENDAR_LOAD_PLANS_KEY, JSON.stringify(state.calendarLoadPlans || {}));
+    localStorage.setItem(getCalendarLoadPlansKey(), JSON.stringify(state.calendarLoadPlans || {}));
   } catch (error) {
     console.warn("[Calendar] Failed to persist planned load scores", error);
   }
+}
+
+function getCalendarLoadPlansKey() {
+  return `${CALENDAR_LOAD_PLANS_KEY}:${getActiveTeamId()}`;
 }
 
 function saveCalendarLoadPlan(date, gpsLoad, rpeLoad) {
@@ -736,17 +1251,152 @@ function normalizeReadinessReport(report) {
 
 function saveState() {
   if (isSupabaseMode()) {
+    if (!canWriteOperationalData()) {
+      showStorageWarning("למשתמש צפייה בלבד אין הרשאה לשמור שינויים.");
+      return;
+    }
+    if (!coachSession) {
+      showStorageWarning("שמירה מלאה ל-Supabase דורשת כניסת צוות מקצועי. דוחות שחקן נשמרים במסלול נקודתי בלבד.");
+      return;
+    }
     queueSupabaseSave();
     return;
   }
   localStorage.setItem(STORE_KEY, JSON.stringify(state));
 }
 
-function resetDemoState() {
-  state = createDemoState();
-  saveState();
+async function savePlayerReportToSupabase(report, type) {
+  ensureSupabaseConfig();
+  if (type === "readiness") {
+    try {
+      await supabaseUpsert("readiness_reports", [toSupabaseReadinessReport(report, true)], "team_id,player_id,report_date");
+    } catch (error) {
+      if (!isMissingReadinessPainColumnError(error)) throw error;
+      await supabaseUpsert("readiness_reports", [toSupabaseReadinessReport(report, false)], "team_id,player_id,report_date");
+    }
+    return;
+  }
+  if (type === "rpe") {
+    await supabaseUpsert("rpe_reports", [toSupabaseRpeReport(report)], "team_id,player_id,report_date");
+    return;
+  }
+  throw new Error("סוג דוח שחקן לא נתמך.");
+}
+
+async function persistPlayerReport(report, type) {
+  if (!isSupabaseMode() || coachSession) {
+    saveState();
+    return true;
+  }
+  try {
+    await savePlayerReportToSupabase(report, type);
+    supabaseStatus = "connected";
+    updateStorageDiagnosticsError("");
+    clearStorageWarning();
+    return true;
+  } catch (error) {
+    logSupabaseError(`player-${type}-save`, error);
+    updateStorageDiagnosticsError(error.message || String(error));
+    showStorageWarning(`שמירת דוח שחקן ל-Supabase נכשלה: ${STORAGE_DIAGNOSTICS.lastSupabaseError}`);
+    alert("שמירת הדוח נכשלה מול Supabase. פנה לצוות המקצועי.");
+    return false;
+  }
+}
+
+async function resetDemoState() {
+  const demoState = createMonthDemoState();
+  const replaceLegacyDemo = isPureLegacyDemoState(state);
+  state = mergeMonthDemoState(state, demoState, replaceLegacyDemo);
+  persistCalendarLoadPlans();
   localStorage.removeItem(PLAYER_SESSION_KEY);
+  if (isSupabaseMode()) {
+    try {
+      console.info("[RPE Demo] Safe month demo reseed started", {
+        teamId: getActiveTeamId(),
+        demoPrefix: DEMO_DATA_PREFIX,
+        demoVersion: DEMO_DATASET_VERSION
+      });
+      await deleteKnownDemoRowsFromSupabase(replaceLegacyDemo);
+      await saveSupabaseState(state);
+      supabaseStatus = "connected";
+      updateStorageDiagnosticsError("");
+      clearStorageWarning();
+      console.info("[RPE Demo] One-month demo data saved to Supabase", getDemoDatasetCounts(state));
+    } catch (error) {
+      logSupabaseError("month-demo-reseed", error);
+      supabaseStatus = "error";
+      updateStorageDiagnosticsError(error.message || String(error));
+      showStorageWarning(`טעינת חודש הדמו ל-Supabase נכשלה: ${STORAGE_DIAGNOSTICS.lastSupabaseError}`);
+    }
+  } else {
+    localStorage.setItem(STORE_KEY, JSON.stringify(state));
+  }
   render();
+}
+
+function createMonthDemoState() {
+  const dataset = createMonthDemoDataset(todayIso());
+  return {
+    ...dataset,
+    painAreas: [...DEFAULT_PAIN_AREAS],
+    settings: { ...DEFAULT_SETTINGS }
+  };
+}
+
+function mergeMonthDemoState(currentState, demoState, replaceLegacyDemo = false) {
+  const current = currentState || createEmptyState();
+  return normalizeState({
+    ...current,
+    schemaVersion: 3,
+    seededAt: demoState.seededAt,
+    demoDataset: demoState.demoDataset,
+    players: replaceKnownDemoRows(current.players, demoState.players, replaceLegacyDemo),
+    readinessReports: replaceKnownDemoRows(current.readinessReports, demoState.readinessReports, replaceLegacyDemo),
+    reports: replaceKnownDemoRows(current.reports, demoState.reports, replaceLegacyDemo),
+    sessions: replaceKnownDemoRows(current.sessions, demoState.sessions, replaceLegacyDemo),
+    gpsSessions: replaceKnownDemoRows(current.gpsSessions, demoState.gpsSessions, replaceLegacyDemo),
+    gpsRecords: replaceKnownDemoRows(current.gpsRecords, demoState.gpsRecords, replaceLegacyDemo),
+    painAreas: unique([...(current.painAreas || []), ...demoState.painAreas]),
+    settings: { ...demoState.settings, ...(current.settings || {}) },
+    calendarLoadPlans: { ...(current.calendarLoadPlans || {}), ...(demoState.calendarLoadPlans || {}) }
+  });
+}
+
+function replaceKnownDemoRows(currentRows = [], demoRows = [], replaceLegacyDemo = false) {
+  const realRows = currentRows.filter((item) => !isKnownDemoRow(item, replaceLegacyDemo));
+  return [...demoRows, ...realRows];
+}
+
+function isKnownDemoRow(item, includeLegacy = false) {
+  const id = item && item.id;
+  return isMonthDemoId(id) || (includeLegacy && isLegacyBuiltInDemoId(id));
+}
+
+function isPureLegacyDemoState(candidate) {
+  if (!candidate || !Array.isArray(candidate.players) || candidate.players.length !== 9) return false;
+  const collections = [candidate.players, candidate.readinessReports, candidate.reports, candidate.sessions, candidate.gpsSessions, candidate.gpsRecords];
+  return collections.every((rows) => Array.isArray(rows) && rows.every((item) => isLegacyBuiltInDemoId(item.id)));
+}
+
+function getDemoDatasetCounts(nextState = state) {
+  const count = (rows) => (rows || []).filter((item) => isMonthDemoId(item.id)).length;
+  return {
+    players: count(nextState.players),
+    readinessReports: count(nextState.readinessReports),
+    rpeReports: count(nextState.reports),
+    sessions: count(nextState.sessions),
+    gpsSessions: count(nextState.gpsSessions),
+    gpsRecords: count(nextState.gpsRecords)
+  };
+}
+
+function getDemoDatasetAnchorDate(nextState = state) {
+  if (nextState.demoDataset && nextState.demoDataset.anchorDate) return nextState.demoDataset.anchorDate;
+  return (nextState.readinessReports || [])
+    .filter((report) => isMonthDemoId(report.id))
+    .map((report) => report.date)
+    .sort()
+    .reverse()[0] || "";
 }
 
 async function bootstrapSupabaseState() {
@@ -788,7 +1438,7 @@ function queueSupabaseSave() {
 
 async function loadSupabaseState() {
   ensureSupabaseConfig();
-  const teamId = APP_CONFIG.teamId;
+  const teamId = getActiveTeamId();
   console.info("[RPE Runtime] first test query to teams", { teamId });
   const teamRows = await supabaseSelect("teams", `id=eq.${encodeURIComponent(teamId)}&select=*`);
   console.info("[RPE Runtime] first test query to teams completed", { rows: teamRows.length });
@@ -803,7 +1453,7 @@ async function loadSupabaseState() {
     supabaseSelect("gps_records", `team_id=eq.${encodeURIComponent(teamId)}&select=*`)
   ]);
 
-  const shouldSeedDemo = APP_CONFIG.seedDemoData && (!teamRows.length || !players.length);
+  const shouldSeedDemo = shouldSeedDemoForActiveTeam(teamRows, players);
   console.info("[RPE Runtime] seed attempt", {
     seedDemoData: APP_CONFIG.seedDemoData,
     shouldSeedDemo,
@@ -826,6 +1476,7 @@ async function loadSupabaseState() {
   return normalizeState({
     schemaVersion: 3,
     seededAt: teamRows[0].created_at || new Date().toISOString(),
+    team: teamRows[0] ? { id: teamRows[0].id, name: teamRows[0].name, slug: teamRows[0].slug, active: teamRows[0].active !== false } : null,
     players: players.map(fromSupabasePlayer),
     painAreas: painRows.length ? painRows.map((row) => row.name) : [...DEFAULT_PAIN_AREAS],
     settings: settingsRows.length ? fromSupabaseSettings(settingsRows[0]) : { ...DEFAULT_SETTINGS },
@@ -837,13 +1488,18 @@ async function loadSupabaseState() {
   });
 }
 
+function shouldSeedDemoForActiveTeam(teamRows, playerRows) {
+  const isDemoTeam = getActiveTeamId() === DEFAULT_DEMO_TEAM_ID;
+  return Boolean(APP_CONFIG.seedDemoData && isDemoTeam && (!teamRows.length || !playerRows.length));
+}
+
 async function saveSupabaseState(nextState) {
   ensureSupabaseConfig();
-  const teamId = APP_CONFIG.teamId;
+  const teamId = getActiveTeamId();
   await supabaseUpsert("teams", [{
     id: teamId,
-    name: APP_CONFIG.teamName,
-    slug: slugify(APP_CONFIG.teamName),
+    name: getActiveTeamName(),
+    slug: getActiveTeamSlug(),
     active: true
   }], "id");
 
@@ -897,6 +1553,55 @@ async function supabaseUpsert(table, rows, onConflict) {
   });
 }
 
+async function supabaseRpc(functionName, payload = {}) {
+  return supabaseRequest(`rpc/${functionName}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+}
+
+async function supabaseInsert(table, row) {
+  return supabaseRequest(`${APP_CONFIG.supabaseTablePrefix}${table}`, {
+    method: "POST",
+    headers: {
+      Prefer: "return=representation",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(row)
+  });
+}
+
+async function supabasePatch(table, query, patch) {
+  return supabaseRequest(`${APP_CONFIG.supabaseTablePrefix}${table}?${query}`, {
+    method: "PATCH",
+    headers: {
+      Prefer: "return=representation",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(patch)
+  });
+}
+
+async function ownerAdminApi(action, payload = {}) {
+  if (!coachSession?.accessToken) throw new Error("נדרשת התחברות Owner.");
+  const response = await fetch("/api/admin", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${coachSession.accessToken}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ action, ...payload })
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || result.ok === false) {
+    throw new Error(result.error || `Admin API failed: ${response.status}`);
+  }
+  return result.result || result;
+}
+
 async function supabaseUpsertReadinessReports(reports) {
   if (!reports.length) return [];
   try {
@@ -916,8 +1621,15 @@ function isMissingReadinessPainColumnError(error) {
 }
 
 async function supabaseDeleteMissing(table, column, values) {
-  const teamFilter = `team_id=eq.${encodeURIComponent(APP_CONFIG.teamId)}`;
+  const teamFilter = `team_id=eq.${encodeURIComponent(getActiveTeamId())}`;
   const uniqueValues = unique(values.filter(Boolean));
+  if (uniqueValues.length > 120) {
+    console.info("[RPE Supabase] Skipping broad delete reconciliation for a large dataset", {
+      table,
+      values: uniqueValues.length
+    });
+    return [];
+  }
   const missingFilter = uniqueValues.length
     ? `&${column}=not.in.(${uniqueValues.map((value) => encodeURIComponent(String(value))).join(",")})`
     : "";
@@ -935,6 +1647,10 @@ async function supabaseRequest(path, options = {}) {
   try {
     return await client.request(path, options);
   } catch (error) {
+    if (isSupabaseAuthFailure(error) && coachSession?.refreshToken && !options._retriedAuth) {
+      await refreshCoachSession();
+      return supabaseRequest(path, { ...options, _retriedAuth: true });
+    }
     updateStorageDiagnosticsError(error.message || String(error));
     if (!String(error.message || "").includes("Supabase request failed")) {
       console.error("[RPE Supabase] Network or parsing error", {
@@ -947,10 +1663,55 @@ async function supabaseRequest(path, options = {}) {
   }
 }
 
+function isSupabaseAuthFailure(error) {
+  const message = String(error?.message || error || "");
+  return message.includes("401") || /JWT|expired|invalid.*token|Auth/i.test(message);
+}
+
+async function deleteKnownDemoRowsFromSupabase(includeLegacy = false) {
+  ensureSupabaseConfig();
+  const legacySessionIds = ["s-today", "s-yesterday", "s-game", "s-rest", "s-train-5", "s-prev"];
+  const legacyPlayerIds = Array.from({ length: 9 }, (_, index) => `p${index + 1}`);
+  const deletionSteps = [
+    ["gps_records", ["demo-month-*", ...(includeLegacy ? ["gps-full-*", "gps-first-*", "gps-second-*"] : [])]],
+    ["readiness_reports", ["demo-month-*", ...(includeLegacy ? ["pre-demo-*"] : [])]],
+    ["rpe_reports", ["demo-month-*", ...(includeLegacy ? ["post-demo-*"] : [])]],
+    ["gps_sessions", ["demo-month-*", ...(includeLegacy ? ["gps-demo-*"] : [])]],
+    ["sessions", ["demo-month-*"]]
+  ];
+  for (const [table, patterns] of deletionSteps) {
+    for (const pattern of patterns) {
+      await supabaseDeleteDemoPattern(table, pattern);
+    }
+  }
+  if (includeLegacy) {
+    await supabaseDeleteDemoIds("sessions", legacySessionIds);
+    await supabaseDeleteDemoIds("players", legacyPlayerIds);
+  }
+  await supabaseDeleteDemoPattern("players", "demo-month-*");
+}
+
+async function supabaseDeleteDemoPattern(table, pattern) {
+  const query = `team_id=eq.${encodeURIComponent(getActiveTeamId())}&id=like.${encodeURIComponent(pattern)}`;
+  return supabaseRequest(`${APP_CONFIG.supabaseTablePrefix}${table}?${query}`, {
+    method: "DELETE",
+    headers: { Prefer: "return=minimal" }
+  });
+}
+
+async function supabaseDeleteDemoIds(table, ids) {
+  if (!ids.length) return [];
+  const query = `team_id=eq.${encodeURIComponent(getActiveTeamId())}&id=in.(${ids.map((id) => encodeURIComponent(id)).join(",")})`;
+  return supabaseRequest(`${APP_CONFIG.supabaseTablePrefix}${table}?${query}`, {
+    method: "DELETE",
+    headers: { Prefer: "return=minimal" }
+  });
+}
+
 function logSupabaseError(context, error) {
   console.error(`[RPE Supabase] ${context} error`, {
     storageDriver: APP_CONFIG.storageDriver,
-    teamId: APP_CONFIG.teamId,
+    teamId: getActiveTeamId(),
     message: error.message || String(error),
     error
   });
@@ -959,7 +1720,7 @@ function logSupabaseError(context, error) {
 async function testSupabaseConnection() {
   console.info("[RPE Runtime] manual Supabase connection test", {
     selectedStorageDriver: APP_CONFIG.storageDriver,
-    teamId: APP_CONFIG.teamId
+    teamId: getActiveTeamId()
   });
   if (!isSupabaseMode()) {
     const message = "האפליקציה במצב Local fallback. בדוק ש-env.js נטען וש-RPE_STORAGE_DRIVER=supabase.";
@@ -967,7 +1728,7 @@ async function testSupabaseConnection() {
     return { ok: false, message };
   }
   try {
-    const rows = await supabaseSelect("teams", `id=eq.${encodeURIComponent(APP_CONFIG.teamId)}&select=id,name`);
+    const rows = await supabaseSelect("teams", `id=eq.${encodeURIComponent(getActiveTeamId())}&select=id,name`);
     supabaseStatus = "connected";
     updateStorageDiagnosticsError("");
     clearStorageWarning();
@@ -986,26 +1747,28 @@ async function testSupabaseConnection() {
 function toSupabasePlayer(player) {
   return {
     id: player.id,
-    team_id: APP_CONFIG.teamId,
+    team_id: getActiveTeamId(),
     name: player.name,
     active: player.active !== false,
     pin_code: normalizePin(player.pin || "1234"),
-    position: getPlayerPrimaryPosition(player.id) || null
+    position: normalizePlayerPosition(player.position) || getPlayerPrimaryPosition(player.id) || null
   };
 }
 
 function fromSupabasePlayer(row) {
   return {
     id: row.id,
+    teamId: row.team_id || getActiveTeamId(),
     name: row.name,
     active: row.active !== false,
-    pin: normalizePin(row.pin_code || "1234")
+    pin: normalizePin(row.pin_code || "1234"),
+    position: normalizePlayerPosition(row.position || "")
   };
 }
 
 function toSupabaseSettings(settings) {
   return {
-    team_id: APP_CONFIG.teamId,
+    team_id: getActiveTeamId(),
     rpe_high: settings.rpeHigh,
     fatigue_high: settings.fatigueHigh,
     soreness_high: settings.sorenessHigh,
@@ -1031,7 +1794,7 @@ function fromSupabaseSettings(row) {
 function toSupabaseSession(sessionItem) {
   return {
     id: sessionItem.id,
-    team_id: APP_CONFIG.teamId,
+    team_id: getActiveTeamId(),
     session_date: sessionItem.date,
     session_type: sessionItem.sessionType,
     default_minutes: Number(sessionItem.defaultMinutes) || 0,
@@ -1054,7 +1817,7 @@ function fromSupabaseSession(row) {
 function toSupabaseReadinessReport(report, includeDetailedPainColumns = false) {
   const row = {
     id: report.id,
-    team_id: APP_CONFIG.teamId,
+    team_id: getActiveTeamId(),
     player_id: report.playerId,
     player_name: report.playerName,
     created_at: report.createdAt,
@@ -1136,7 +1899,7 @@ function stripReadinessMetadata(comments) {
 function toSupabaseRpeReport(report) {
   return {
     id: report.id,
-    team_id: APP_CONFIG.teamId,
+    team_id: getActiveTeamId(),
     player_id: report.playerId,
     player_name: report.playerName,
     created_at: report.createdAt,
@@ -1148,11 +1911,13 @@ function toSupabaseRpeReport(report) {
     pain_area: report.painArea || NO_PAIN,
     completed_full_session: report.completedFullSession || "מלא",
     body_weight_after: report.bodyWeightAfter,
-    comments: report.comments || ""
+    comments: packRpeComments(report)
   };
 }
 
 function fromSupabaseRpeReport(row) {
+  const unpacked = unpackRpeComments(row.comments || "");
+  const painArea = row.pain_area || NO_PAIN;
   return {
     id: row.id,
     playerId: row.player_id,
@@ -1163,17 +1928,46 @@ function fromSupabaseRpeReport(row) {
     rpe: Number(row.rpe) || 0,
     fatigue: Number(row.fatigue) || 0,
     soreness: Number(row.soreness) || 0,
-    painArea: row.pain_area || NO_PAIN,
+    painArea,
+    detailedPainArea: painArea === NO_PAIN ? "" : unpacked.metadata.detailedPainArea || painArea,
+    painSide: painArea === NO_PAIN ? "" : unpacked.metadata.painSide || "",
+    painIntensity: painArea === NO_PAIN || unpacked.metadata.painIntensity === undefined ? null : Number(unpacked.metadata.painIntensity),
     completedFullSession: row.completed_full_session || "מלא",
     bodyWeightAfter: row.body_weight_after === null ? null : Number(row.body_weight_after),
-    comments: row.comments || ""
+    comments: unpacked.comments
   };
+}
+
+function packRpeComments(report) {
+  const comments = stripRpeMetadata(report.comments || "").trim();
+  if (!report.painArea || report.painArea === NO_PAIN) return comments;
+  const metadata = {
+    painSide: report.painSide || "",
+    painIntensity: report.painIntensity === null || report.painIntensity === undefined ? null : Number(report.painIntensity),
+    detailedPainArea: report.detailedPainArea || report.painArea
+  };
+  return `${comments}${comments ? "\n\n" : ""}[RPE_POST_METADATA]${JSON.stringify(metadata)}[/RPE_POST_METADATA]`;
+}
+
+function unpackRpeComments(comments) {
+  const text = String(comments || "");
+  const match = text.match(/\[RPE_POST_METADATA\]([\s\S]*?)\[\/RPE_POST_METADATA\]/);
+  if (!match) return { comments: text, metadata: {} };
+  try {
+    return { comments: stripRpeMetadata(text).trim(), metadata: JSON.parse(match[1]) || {} };
+  } catch (error) {
+    return { comments: stripRpeMetadata(text).trim(), metadata: {} };
+  }
+}
+
+function stripRpeMetadata(comments) {
+  return String(comments || "").replace(/\s*\[RPE_POST_METADATA\][\s\S]*?\[\/RPE_POST_METADATA\]\s*/g, "").trim();
 }
 
 function toSupabaseGpsSession(sessionItem) {
   return {
     id: sessionItem.id,
-    team_id: APP_CONFIG.teamId,
+    team_id: getActiveTeamId(),
     session_date: sessionItem.date,
     session_name: sessionItem.sessionName,
     type: sessionItem.type,
@@ -1232,7 +2026,7 @@ function parseGpsSessionNotes(notesText) {
 function toSupabaseGpsRecord(record) {
   return {
     id: record.id,
-    team_id: APP_CONFIG.teamId,
+    team_id: getActiveTeamId(),
     gps_session_id: record.gpsSessionId,
     player_id: record.playerId,
     player_name: record.playerName,
@@ -1566,6 +2360,72 @@ function renderPlayerProtected(renderer) {
   renderer(player);
 }
 
+function renderPlayerTeamSelector() {
+  if (!isSupabaseMode()) return "";
+  const queryTeam = new URLSearchParams(window.location.search).get("team") || getActiveTeamSlug();
+  return `
+    <div class="field player-team-loader">
+      <label for="playerTeamCode">קוד צוות</label>
+      <div class="inline-control">
+        <input id="playerTeamCode" name="teamCode" value="${escapeAttr(queryTeam)}" placeholder="לדוגמה: team-1" autocomplete="organization" />
+        <button id="loadPlayerTeam" class="btn secondary" type="button">טען סגל</button>
+      </div>
+      <small>שחקנים רואים רק את רשימת השחקנים של הצוות שנבחר.</small>
+      <div id="playerTeamLoadStatus" class="diagnostic-result"></div>
+    </div>
+  `;
+}
+
+async function loadPlayerTeamByCode(teamCode) {
+  const code = String(teamCode || "").trim();
+  if (!code) throw new Error("יש להזין קוד צוות.");
+  const payload = await supabaseRpc("player_team_roster", { p_team_code: code });
+  const roster = normalizeRpcPayload(payload);
+  const team = roster.team;
+  if (!team) throw new Error("לא נמצא צוות פעיל עבור הקוד שהוזן.");
+  const teamId = team.id;
+  setPlayerTeamContext({ teamId, teamName: team.name, teamSlug: team.slug });
+  state = normalizeState({
+    ...createEmptyState(),
+    team: { id: team.id, name: team.name, slug: team.slug, active: team.active !== false },
+    players: Array.isArray(roster.players) ? roster.players.map((player) => ({
+      id: player.id,
+      teamId,
+      name: player.name,
+      active: player.active !== false,
+      position: normalizePlayerPosition(player.position || ""),
+      pin: ""
+    })) : [],
+    painAreas: Array.isArray(roster.painAreas) && roster.painAreas.length ? roster.painAreas : [...DEFAULT_PAIN_AREAS],
+    settings: roster.settings ? { ...DEFAULT_SETTINGS, ...roster.settings } : { ...DEFAULT_SETTINGS }
+  });
+  return state;
+}
+
+function normalizeRpcPayload(payload) {
+  if (Array.isArray(payload)) return payload[0] || {};
+  return payload || {};
+}
+
+async function verifyPlayerLoginWithSupabase(teamCode, playerId, pin) {
+  const payload = await supabaseRpc("player_login", {
+    p_team_code: String(teamCode || "").trim() || getActiveTeamSlug(),
+    p_player_id: playerId,
+    p_pin_code: pin
+  });
+  const result = normalizeRpcPayload(payload);
+  if (!result || !result.player || !result.team) throw new Error("שם או PIN אינם נכונים.");
+  setPlayerTeamContext({ teamId: result.team.id, teamName: result.team.name, teamSlug: result.team.slug });
+  return {
+    id: result.player.id,
+    teamId: result.team.id,
+    name: result.player.name,
+    active: result.player.active !== false,
+    position: normalizePlayerPosition(result.player.position || ""),
+    pin
+  };
+}
+
 function renderPlayerLogin() {
   const html = `
     <main class="player-page player-app">
@@ -1593,6 +2453,7 @@ function renderPlayerLogin() {
           <li><span>2</span><strong>הזן קוד אישי</strong></li>
           <li><span>3</span><strong>לחץ כניסה</strong></li>
         </ol>
+        ${renderPlayerTeamSelector()}
         <div class="field">
           <label for="loginPlayerId">שם שחקן</label>
           <select id="loginPlayerId" name="playerId" required>
@@ -1612,18 +2473,56 @@ function renderPlayerLogin() {
   `;
 
   mount(html, () => {
-    document.getElementById("playerLoginForm").addEventListener("submit", (event) => {
+    const loadTeamButton = document.getElementById("loadPlayerTeam");
+    if (loadTeamButton) {
+      loadTeamButton.addEventListener("click", async () => {
+        const status = document.getElementById("playerTeamLoadStatus");
+        const input = document.getElementById("playerTeamCode");
+        loadTeamButton.disabled = true;
+        if (status) {
+          status.textContent = "טוען סגל...";
+          status.className = "diagnostic-result";
+        }
+        try {
+          await loadPlayerTeamByCode(input?.value || "");
+          if (status) {
+            status.textContent = "הסגל נטען בהצלחה.";
+            status.className = "diagnostic-result green";
+          }
+          renderPlayerLogin();
+        } catch (error) {
+          console.error("[Player Team] failed to load roster", error);
+          if (status) {
+            status.textContent = error.message || "טעינת הסגל נכשלה.";
+            status.className = "diagnostic-result red";
+          }
+        } finally {
+          loadTeamButton.disabled = false;
+        }
+      });
+    }
+    document.getElementById("playerLoginForm").addEventListener("submit", async (event) => {
       event.preventDefault();
       const data = new FormData(event.currentTarget);
       const playerId = String(data.get("playerId") || "");
       const pin = normalizePin(data.get("pin"));
-      const player = state.players.find((item) => item.id === playerId && item.active && item.pin === pin);
-      if (!player) {
-        document.getElementById("loginError").classList.add("show");
-        return;
+      const loginError = document.getElementById("loginError");
+      loginError.classList.remove("show");
+      try {
+        const player = isSupabaseMode() && !coachSession
+          ? await verifyPlayerLoginWithSupabase(String(data.get("teamCode") || getActiveTeamSlug()), playerId, pin)
+          : state.players.find((item) => item.id === playerId && item.active && item.pin === pin);
+        if (!player) throw new Error("שם או PIN אינם נכונים.");
+        if (!state.players.some((item) => item.id === player.id)) {
+          state.players.unshift(player);
+        }
+        setLoggedPlayer(player, pin);
+        navigate("/report");
+      } catch (error) {
+        console.error("[Player Login] failed", error);
+        loginError.textContent = error.message || "שם או PIN אינם נכונים";
+        loginError.classList.add("show");
       }
-      localStorage.setItem(PLAYER_SESSION_KEY, player.id);
-      navigate("/report");
     });
   });
 }
@@ -2328,7 +3227,7 @@ function renderReadinessForm(player) {
     bindScaleButtons();
     bindBodyMap();
     bindReadinessLiveFeedback();
-    document.getElementById("readinessForm").addEventListener("submit", (event) => {
+    document.getElementById("readinessForm").addEventListener("submit", async (event) => {
       event.preventDefault();
       const data = new FormData(event.currentTarget);
       const date = todayIso();
@@ -2360,7 +3259,8 @@ function renderReadinessForm(player) {
       };
       state.readinessReports = state.readinessReports.filter((item) => !(item.playerId === player.id && item.date === date));
       state.readinessReports.unshift(report);
-      saveState();
+      const saved = await persistPlayerReport(report, "readiness");
+      if (!saved) return;
       renderPlayerSuccess(player, "דוח המוכנות נשלח בהצלחה", "הצוות קיבל את תמונת המצב שלך לפני האימון.");
     });
   });
@@ -2419,7 +3319,7 @@ function renderPostReportForm(player) {
   mount(html, () => {
     bindScaleButtons();
     bindBodyMap();
-    document.getElementById("postForm").addEventListener("submit", (event) => {
+    document.getElementById("postForm").addEventListener("submit", async (event) => {
       event.preventDefault();
       const data = new FormData(event.currentTarget);
       const date = todayIso();
@@ -2440,7 +3340,8 @@ function renderPostReportForm(player) {
       };
       state.reports = state.reports.filter((item) => !(item.playerId === player.id && item.date === date));
       state.reports.unshift(report);
-      saveState();
+      const saved = await persistPlayerReport(report, "rpe");
+      if (!saved) return;
       renderPlayerSuccess(player, "דוח ה-RPE נשלח בהצלחה", "הצוות יראה את העומס, העייפות וההידרציה שלך.");
     });
   });
@@ -2555,40 +3456,38 @@ function painField(selected, options = {}) {
 
 function renderCoachHome() {
   const context = buildCoachHomeContext();
-  const overall = getCoachHomeOverallStatus(context);
-  const actions = buildCoachHomeActionItems(context).slice(0, 5);
+  const priorityItems = buildCoachHomePriorityItems(context);
+  const overall = getCoachHomeOverallStatus(context, priorityItems);
+  const actions = buildCoachHomeActionItems(context, priorityItems);
   const squad = buildCoachHomeSquadStatus(context);
   const latestGps = getCoachHomeLatestGpsActivity();
   const pain = buildCoachHomePainSummary(context);
   const hydration = buildCoachHomeHydrationSummary(context);
-  const upcoming = getCoachHomeUpcomingItems();
+  const recentLoad = buildCoachHomeRecentLoadSummary();
 
   const html = coachShell("home", `
     <section class="coach-home-hero">
       <div class="coach-home-hero-main">
-        <span class="eyebrow">Staff Briefing</span>
+        <span class="eyebrow">תדרוך צוות</span>
         <h2>תדרוך יומי</h2>
-        <p>${escapeHtml(formatDateDisplay(context.selectedDate))} · ${escapeHtml(APP_CONFIG.teamName)}</p>
+        <p>${escapeHtml(formatDateDisplay(context.selectedDate))} · ${escapeHtml(getActiveTeamName())}</p>
         <div class="coach-home-status ${overall.tone}">
           <strong>${escapeHtml(overall.icon)} ${escapeHtml(overall.label)}</strong>
           <span>${escapeHtml(overall.reason)}</span>
         </div>
       </div>
-      <div class="coach-home-brief-lines">
-        ${buildCoachHomeBriefLines(context).map((line) => `<p>${escapeHtml(line)}</p>`).join("")}
-        <a href="/coach/analytics" data-route class="btn primary">מעבר לניתוחים מלאים</a>
+      <div class="coach-home-brief-actions">
+        <div class="coach-home-brief-buttons">
+          <a href="/coach/analytics" data-route class="btn primary">מעבר לניתוחים מלאים</a>
+          <button type="button" id="downloadDailyPdf" class="btn secondary daily-pdf-button">הורדת דוח יומי PDF</button>
+        </div>
+        <div id="dailyPdfStatus" class="daily-pdf-status" role="status" hidden></div>
       </div>
     </section>
 
-    <section class="section coach-home-actions">
-      <div class="section-title">
-        <h3>פעולות מומלצות ${coachInfoTip("פעולות קצרות לפי הדוחות, GPS וההתראות של היום. מוצגות עד 5 פעולות בלבד.")}</h3>
-        <span>${actions.length} פעולות</span>
-      </div>
-      <div class="coach-action-grid">
-        ${actions.map(renderCoachHomeActionItem).join("")}
-      </div>
-    </section>
+    ${renderCoachHomePriorityPanel(priorityItems)}
+
+    ${renderCoachHomeActions(actions)}
 
     <section class="coach-home-grid">
       ${renderCoachHomeSquadCard(squad)}
@@ -2596,7 +3495,7 @@ function renderCoachHome() {
       ${renderCoachHomeGpsCard(latestGps)}
       ${renderCoachHomePainCard(pain)}
       ${renderCoachHomeHydrationCard(hydration)}
-      ${renderCoachHomeCalendarCard(upcoming)}
+      ${renderCoachHomeRecentLoadCard(recentLoad)}
     </section>
   `);
 
@@ -2615,15 +3514,51 @@ function bindCoachHomeTooltips() {
   const closeTooltips = () => {
     document.querySelectorAll(".tooltip-open").forEach((element) => element.classList.remove("tooltip-open"));
   };
-  document.addEventListener("click", closeTooltips, { once: true });
+  const closeDetails = () => {
+    document.querySelectorAll(".home-detail-trigger.detail-open").forEach((element) => element.classList.remove("detail-open"));
+  };
+  const closeAll = () => {
+    closeTooltips();
+    closeDetails();
+  };
+  const pdfButton = document.getElementById("downloadDailyPdf");
+  if (pdfButton) {
+    pdfButton.addEventListener("click", async () => {
+      const originalText = pdfButton.textContent;
+      pdfButton.disabled = true;
+      pdfButton.setAttribute("aria-busy", "true");
+      pdfButton.textContent = "מכין דוח PDF...";
+      setDailyPdfStatus("", "neutral");
+      try {
+        const report = buildDailyCoachPdfData(addDays(todayIso(), -1));
+        if (!report.hasData) {
+          setDailyPdfStatus("אין מספיק נתונים להפקת דוח עבור אתמול", "yellow");
+          return;
+        }
+        const result = await downloadDailyCoachPdf(report);
+        setDailyPdfStatus(`הדוח הופק בהצלחה · ${result.pageCount} עמודים`, "green");
+      } catch (error) {
+        console.error("[Daily PDF] generation failed", error);
+        const message = error?.code === "NO_DAILY_DATA"
+          ? "אין מספיק נתונים להפקת דוח עבור אתמול"
+          : "לא ניתן היה להפיק את הדוח. נסו שוב.";
+        setDailyPdfStatus(message, "red");
+      } finally {
+        pdfButton.disabled = false;
+        pdfButton.removeAttribute("aria-busy");
+        pdfButton.textContent = originalText;
+      }
+    });
+  }
+  document.addEventListener("click", closeAll, { once: true });
   document.querySelectorAll("[data-coach-tooltip]").forEach((element) => {
     element.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
       const isOpen = element.classList.contains("tooltip-open");
-      closeTooltips();
+      closeAll();
       if (!isOpen) element.classList.add("tooltip-open");
-      document.addEventListener("click", closeTooltips, { once: true });
+      document.addEventListener("click", closeAll, { once: true });
     });
     element.addEventListener("keydown", (event) => {
       if (event.key === "Escape") closeTooltips();
@@ -2633,10 +3568,35 @@ function bindCoachHomeTooltips() {
       }
     });
   });
+  document.querySelectorAll("[data-home-detail]").forEach((element) => {
+    element.addEventListener("click", (event) => {
+      if (event.target.closest("a[data-route]")) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const isOpen = element.classList.contains("detail-open");
+      closeAll();
+      if (!isOpen) element.classList.add("detail-open");
+      document.addEventListener("click", closeAll, { once: true });
+    });
+    element.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") closeAll();
+      if ((event.key === "Enter" || event.key === " ") && !event.target.closest("a[data-route]")) {
+        event.preventDefault();
+        element.click();
+      }
+    });
+  });
 }
 
-function buildCoachHomeContext() {
-  const selectedDate = todayIso();
+function setDailyPdfStatus(message, tone) {
+  const status = document.getElementById("dailyPdfStatus");
+  if (!status) return;
+  status.textContent = message;
+  status.className = `daily-pdf-status ${tone || "neutral"}`;
+  status.hidden = !message;
+}
+
+function buildCoachHomeContext(selectedDate = todayIso()) {
   const activePlayers = getActivePlayers();
   const readinessToday = state.readinessReports.filter((report) => report.date === selectedDate).map(getComputedReadiness);
   const postToday = state.reports.filter((report) => report.date === selectedDate).map(getComputedReport);
@@ -2653,120 +3613,493 @@ function buildCoachHomeContext() {
     riskLevel: "all"
   });
   const status = buildCoachDailyStatus(activePlayers, readinessToday, postToday, missingPre, missingPost, weekRows, selectedDate);
-  return { selectedDate, activePlayers, readinessToday, postToday, missingPre, missingPost, weekRows, status };
+  return { selectedDate, activePlayers, readinessToday, postToday, missingPre, missingPost, weekRows, status, smartAlerts: status.smartAlerts };
 }
 
-function getCoachHomeOverallStatus(context) {
-  const severeCount = context.status.riskPlayers.filter((row) => row.severity > 1).length;
+function buildDailyCoachPdfData(selectedDate) {
+  const context = buildCoachHomeContext(selectedDate);
+  const gpsSessions = state.gpsSessions
+    .filter((sessionItem) => sessionItem.date === selectedDate)
+    .sort((a, b) => String(a.sessionName || "").localeCompare(String(b.sessionName || ""), "he"));
+  const gpsSessionIds = new Set(gpsSessions.map((sessionItem) => sessionItem.id));
+  const gpsRecords = summarizeDailyGpsRecords(
+    gpsSessions.flatMap((sessionItem) => {
+      const sessionRecords = state.gpsRecords
+        .filter((record) => record.gpsSessionId === sessionItem.id && gpsSessionIds.has(record.gpsSessionId))
+        .map(getComputedGpsRecord);
+      return getFullPeriodPreferred(sessionRecords).map(enrichPlayerGpsRecord);
+    })
+  );
+  const attention = buildCoachHomePriorityItems(context).map((item) => ({
+    name: item.player.name,
+    reason: item.reasons.join(" · ") || item.title,
+    severity: item.severity,
+    severityLabel: severityLabel(item.severity),
+    tone: item.severity === "High" ? "red" : item.severity === "Medium" ? "yellow" : "green",
+    action: item.actions.join(" · ") || "להמשיך מעקב."
+  }));
+  const readiness = context.readinessToday
+    .slice()
+    .sort((a, b) => a.readinessScore - b.readinessScore || a.playerName.localeCompare(b.playerName, "he"));
+  const postReports = context.postToday
+    .slice()
+    .sort((a, b) => b.rpe - a.rpe || a.playerName.localeCompare(b.playerName, "he"));
+  const hydrationReports = postReports.filter((report) => report.hydration);
+  const painRows = buildDailyPdfPainRows(context.readinessToday, context.postToday, selectedDate);
+  const readinessAverage = average(readiness.map((report) => report.readinessScore));
+  const rpeAverage = average(postReports.map((report) => report.rpe));
+  const gpsLoadAverage = average(gpsRecords.map((record) => record.gpsLoad));
+  const sleepAverage = average(readiness.map((report) => report.sleepHours));
+  const hydrationAverage = average(hydrationReports.map((report) => report.hydration.lossPercent));
+  const sessionTypes = unique([
+    ...gpsSessions.map((sessionItem) => formatGpsSessionType(sessionItem.activityType || sessionItem.type)),
+    ...postReports.map((report) => report.sessionType)
+  ].filter(Boolean));
+  const report = {
+    title: "דוח יומי - נתוני אתמול",
+    dateIso: selectedDate,
+    dateDisplay: formatDateDisplay(selectedDate),
+    teamName: getActiveTeamName(),
+    sessionLabel: sessionTypes.join(" · ") || "לא הוגדרה פעילות",
+    activePlayerCount: context.activePlayers.length,
+    hasData: Boolean(readiness.length || postReports.length || gpsRecords.length),
+    executive: {
+      readinessAverage,
+      rpeAverage,
+      gpsLoadAverage,
+      sleepAverage,
+      hydrationAverage
+    },
+    attention,
+    gps: {
+      sessionNames: gpsSessions.map((sessionItem) => sessionItem.sessionName).filter(Boolean),
+      players: gpsRecords,
+      loadScore: gpsLoadAverage === null ? null : loadValueToScore(gpsLoadAverage),
+      hsrAverage: average(gpsRecords.map((record) => record.highSpeedRunning)),
+      sprintAverage: average(gpsRecords.map((record) => record.sprintDistance))
+    },
+    readiness: {
+      submittedCount: readiness.length,
+      players: readiness.map((reportItem) => ({
+        name: reportItem.playerName,
+        score: `${formatInteger(reportItem.readinessScore)}/100`,
+        status: reportItem.readinessStatus.label,
+        tone: reportItem.readinessStatus.tone,
+        reasons: reportItem.riskFlags.slice(0, 3).join(" · ") || "ללא חריגה"
+      })),
+      missingNames: context.missingPre.map((player) => player.name),
+      lowNames: readiness.filter((reportItem) => reportItem.readinessScore < 60).map((reportItem) => `${reportItem.playerName} - ${formatInteger(reportItem.readinessScore)}`)
+    },
+    sleep: {
+      underSix: readiness
+        .filter((reportItem) => Number(reportItem.sleepHours) < 6)
+        .map((reportItem) => ({ name: reportItem.playerName, hours: Number(reportItem.sleepHours) })),
+      trend: buildDailyPdfSleepTrend(selectedDate)
+    },
+    rpe: {
+      submittedCount: postReports.length,
+      players: postReports.map((reportItem) => ({
+        name: reportItem.playerName,
+        rpe: `${formatNumber(reportItem.rpe)}/10`,
+        sessionType: reportItem.sessionType,
+        fatigue: reportItem.fatigue ? `${formatNumber(reportItem.fatigue)}/5` : "-",
+        note: reportItem.comments || "-"
+      })),
+      highNames: postReports.filter((reportItem) => Number(reportItem.rpe) >= state.settings.rpeHigh).map((reportItem) => `${reportItem.playerName} - RPE ${formatNumber(reportItem.rpe)}`),
+      missingNames: context.missingPost.map((player) => player.name)
+    },
+    pain: painRows,
+    hydration: {
+      players: hydrationReports
+        .slice()
+        .sort((a, b) => b.hydration.lossPercent - a.hydration.lossPercent)
+        .map((reportItem) => ({
+          name: reportItem.playerName,
+          loss: `${formatNumber(reportItem.hydration.lossPercent)}%`,
+          status: reportItem.hydration.status,
+          tone: reportItem.hydration.tone,
+          sessionType: reportItem.sessionType
+        })),
+      aboveOneNames: hydrationReports.filter((reportItem) => reportItem.hydration.lossPercent > 1).map((reportItem) => `${reportItem.playerName} - ${formatNumber(reportItem.hydration.lossPercent)}%`),
+      aboveTwoNames: hydrationReports.filter((reportItem) => reportItem.hydration.lossPercent > 2).map((reportItem) => `${reportItem.playerName} - ${formatNumber(reportItem.hydration.lossPercent)}%`)
+    },
+    conclusions: []
+  };
+  report.conclusions = buildDailyPdfConclusions(report, context, gpsRecords);
+  return report;
+}
+
+function summarizeDailyGpsRecords(records) {
+  const sumKeys = ["minutesPlayed", "totalDistance", "gpsLoad", "highSpeedRunning", "distanceAbove18", "distanceAbove25", "sprintDistance", "sprintCount", "accelerations", "decelerations"];
+  const averageKeys = ["distancePerMinute", "intensity", "metabolicActivity", "hmld", "workRestRatio"];
+  const byPlayer = new Map();
+  records.forEach((record) => {
+    const key = record.playerId || record.playerName;
+    if (!key) return;
+    const current = byPlayer.get(key) || {
+      playerId: record.playerId,
+      playerName: record.playerName,
+      position: record.position,
+      maxSpeed: 0,
+      sourceCount: 0,
+      averageTotals: Object.fromEntries(averageKeys.map((field) => [field, 0]))
+    };
+    sumKeys.forEach((field) => { current[field] = (Number(current[field]) || 0) + (Number(record[field]) || 0); });
+    averageKeys.forEach((field) => { current.averageTotals[field] += Number(record[field]) || 0; });
+    current.maxSpeed = Math.max(Number(current.maxSpeed) || 0, Number(record.maxSpeed) || 0);
+    current.sourceCount += 1;
+    byPlayer.set(key, current);
+  });
+  return [...byPlayer.values()]
+    .map((record) => {
+      averageKeys.forEach((field) => { record[field] = record.sourceCount ? record.averageTotals[field] / record.sourceCount : 0; });
+      delete record.averageTotals;
+      delete record.sourceCount;
+      return record;
+    })
+    .sort((a, b) => b.gpsLoad - a.gpsLoad || a.playerName.localeCompare(b.playerName, "he"));
+}
+
+function buildDailyPdfPainRows(readinessReports, postReports, selectedDate) {
+  const byKey = new Map();
+  [...readinessReports, ...postReports].forEach((report) => {
+    if (!report.painArea || report.painArea === NO_PAIN) return;
+    const key = `${report.playerId}-${report.painArea}-${report.painSide || ""}`;
+    const current = byKey.get(key);
+    if (!current || Number(report.painIntensity) > Number(current.intensity)) {
+      byKey.set(key, {
+        name: report.playerName || getPlayer(report.playerId)?.name || "שחקן",
+        area: report.detailedPainArea || report.painArea,
+        side: report.painSide || "לא צוין",
+        intensity: report.painIntensity ? `${formatNumber(report.painIntensity)}/10` : "לא צוין",
+        date: formatDateDisplay(selectedDate)
+      });
+    }
+  });
+  return [...byKey.values()].sort((a, b) => a.name.localeCompare(b.name, "he"));
+}
+
+function buildDailyPdfSleepTrend(selectedDate) {
+  return Array.from({ length: 7 }, (_, index) => addDays(selectedDate, index - 6))
+    .map((date) => {
+      const reports = state.readinessReports.filter((report) => report.date === date);
+      return { label: formatShortDate(date), value: average(reports.map((report) => report.sleepHours)) };
+    })
+    .filter((item) => item.value !== null);
+}
+
+function buildDailyPdfConclusions(report, context, gpsRecords) {
+  const conclusions = [];
+  conclusions.push(`אתמול התקבלו ${report.readiness.submittedCount} דוחות מוכנות ו-${report.rpe.submittedCount} דוחות RPE מתוך ${report.activePlayerCount} שחקנים פעילים.`);
+  if (report.attention.length) {
+    conclusions.push(`${report.attention.length} שחקנים דורשים תשומת לב. בראש הרשימה: ${report.attention.slice(0, 3).map((item) => item.name).join(", ")}.`);
+  }
+  const gpsAlerts = gpsRecords.filter((record) => Number(record.gpsLoad) >= 800 || Number(record.highSpeedRunning) >= 650 || Number(record.sprintDistance) >= 180);
+  if (gpsAlerts.length) conclusions.push(`נמצאו ${gpsAlerts.length} חריגות GPS מרכזיות. מומלץ לעבור על עומס, HSR וספרינטים לפני קביעת העומס הבא.`);
+  if (report.pain.length) conclusions.push(`${report.pain.length} דיווחי כאב דורשים שיחה קצרה ומעקב לפני הפעילות היום.`);
+  if (report.hydration.aboveTwoNames.length) conclusions.push(`${report.hydration.aboveTwoNames.length} שחקנים מעל 2% איבוד נוזלים ודורשים מעקב הידרציה.`);
+  else if (report.hydration.aboveOneNames.length) conclusions.push(`${report.hydration.aboveOneNames.length} שחקנים מעל 1% איבוד נוזלים. מומלץ לחזק הנחיות שתייה.`);
+  const missingTotal = context.missingPre.length + context.missingPost.length;
+  if (missingTotal) conclusions.push(`חסרים ${missingTotal} דוחות מאתמול. מומלץ להשלים את תמונת הנתונים מול השחקנים הרלוונטיים.`);
+  if (conclusions.length === 1) conclusions.push("לא נמצאו חריגות מרכזיות. ניתן להמשיך במעקב שגרתי.");
+  return conclusions.slice(0, 6);
+}
+
+function getCoachHomeOverallStatus(context, priorityItems = []) {
+  const severeCount = priorityItems.filter((item) => item.severity === "High").length;
   const redHydration = context.status.hydrationAlerts.some((item) => item.report.hydration && item.report.hydration.tone === "red");
   if (severeCount || redHydration || context.status.gpsLoadAlerts.length >= 2) {
-    return { tone: "red", icon: "🔴", label: "דורש בדיקה", reason: `${Math.max(severeCount, context.status.riskPlayers.length)} שחקנים דורשים תשומת לב מיידית.` };
+    return { tone: "red", icon: "🔴", label: "דורש בדיקה", reason: `${priorityItems.length} שחקנים דורשים תשומת לב היום.` };
   }
-  if (context.status.riskPlayers.length || context.status.missingItems.length || context.status.painAlerts.length || context.status.hydrationAlerts.length || context.status.gpsLoadAlerts.length) {
-    return { tone: "yellow", icon: "🟡", label: "דורש מעקב", reason: `${context.status.riskPlayers.length + context.status.missingItems.length} נושאים דורשים מעקב היום.` };
+  if (priorityItems.length) {
+    return { tone: "yellow", icon: "🟡", label: "דורש מעקב", reason: `${priorityItems.length} שחקנים דורשים מעקב היום.` };
   }
   return { tone: "green", icon: "🟢", label: "מצב תקין", reason: "אין חריגות מרכזיות לתדרוך היומי." };
 }
 
-function buildCoachHomeBriefLines(context) {
-  const lines = [];
-  if (context.status.riskPlayers.length) lines.push(`${context.status.riskPlayers.length} שחקנים דורשים תשומת לב לפני האימון.`);
-  if (context.missingPre.length) lines.push(`${context.missingPre.length} דוחות מוכנות חסרים.`);
-  if (context.missingPost.length) lines.push(`${context.missingPost.length} דוחות RPE חסרים.`);
-  if (context.status.gpsLoadAlerts.length) lines.push(`פעילות GPS אחרונה מצביעה על חריגות עומס אצל ${context.status.gpsLoadAlerts.length} שחקנים.`);
-  if (context.status.painAlerts.length) lines.push(`${context.status.painAlerts.length} דיווחי כאב דורשים מעקב.`);
-  if (!lines.length) lines.push("הקבוצה במצב יציב. מומלץ להמשיך מעקב שגרתי.");
-  return lines.slice(0, 4);
+function buildCoachHomePriorityItems(context) {
+  const byPlayer = new Map();
+  const add = (player, title, reason, severity, action, href) => {
+    if (!player) return;
+    const current = byPlayer.get(player.id) || {
+      player,
+      title,
+      reasons: [],
+      actions: [],
+      severity: "Low",
+      href: href || `/coach/player/${player.id}`
+    };
+    current.title = current.title || title;
+    current.reasons = unique([...current.reasons, reason].filter(Boolean));
+    current.actions = unique([...current.actions, action].filter(Boolean));
+    current.severity = higherSeverity(current.severity, severity);
+    current.href = href || current.href;
+    byPlayer.set(player.id, current);
+  };
+
+  context.smartAlerts.forEach((alert) => add(alert.player, alert.title, alert.reason, alert.severity, alert.action, alert.href));
+  context.status.riskPlayers.forEach((row) => add(
+    row.player,
+    row.mainReason,
+    row.reasons.join(" · "),
+    row.severity > 1 ? "High" : "Medium",
+    "לבצע בדיקה קצרה לפני קבלת החלטת עומס.",
+    `/coach/player/${row.player.id}`
+  ));
+  context.missingPre.forEach((player) => add(player, "דוח מוכנות חסר", "לא הוגש דוח מוכנות היום", "Low", "לשלוח תזכורת לפני הפעילות.", "/coach/reports"));
+  context.missingPost.forEach((player) => add(player, "דוח RPE חסר", "לא הוגש דוח RPE היום", "Low", "לבקש השלמת דוח לאחר הפעילות.", "/coach/reports"));
+
+  const rank = { High: 0, Medium: 1, Low: 2 };
+  return [...byPlayer.values()].sort((a, b) => (rank[a.severity] ?? 3) - (rank[b.severity] ?? 3) || a.player.name.localeCompare(b.player.name, "he"));
 }
 
-function buildCoachHomeActionItems(context) {
+function higherSeverity(first, second) {
+  const rank = { High: 3, Medium: 2, Low: 1 };
+  return (rank[second] || 0) > (rank[first] || 0) ? second : first;
+}
+
+function renderCoachHomePriorityPanel(items) {
+  const visibleItems = items.slice(0, 5);
+  const hiddenCount = Math.max(0, items.length - visibleItems.length);
+  const detailRows = items.map((item) => ({
+    name: item.player.name,
+    reason: item.reasons.join(" · "),
+    action: item.actions.join(" · "),
+    severity: item.severity
+  }));
+  return `
+    <section class="section decision-priority-panel coach-home-priority">
+      <div class="section-title compact-title">
+        <h3>דורש פעולה עכשיו</h3>
+        <span>${items.length ? `${items.length} שחקנים` : "אין פעולה דחופה"}</span>
+      </div>
+      ${visibleItems.length ? `
+        <div class="decision-alert-grid">
+          ${visibleItems.map((item) => `
+            <a class="decision-alert-card ${escapeAttr(item.severity.toLowerCase())}" href="${escapeAttr(item.href)}" data-route>
+              <span class="severity-badge ${escapeAttr(item.severity.toLowerCase())}">${escapeHtml(severityLabel(item.severity))}</span>
+              <strong>${escapeHtml(item.player.name)} · ${escapeHtml(item.title)}</strong>
+              <p>${escapeHtml(item.reasons[0] || "דורש תשומת לב")}</p>
+              <small>${escapeHtml(item.actions[0] || "לבדוק לפני הפעילות.")}</small>
+            </a>
+          `).join("")}
+        </div>
+        ${hiddenCount ? renderHomeDetailControl(`עוד ${hiddenCount} שחקנים · הצג הכל`, "כל השחקנים הדורשים פעולה", detailRows) : ""}
+      ` : `<div class="surface empty compact-empty">אין שחקנים הדורשים פעולה מיידית.</div>`}
+    </section>
+  `;
+}
+
+function buildCoachHomeActionItems(context, priorityItems) {
   const actions = [];
-  const topRisk = context.status.riskPlayers[0];
-  if (topRisk) {
-    actions.push({ icon: "⚠", title: `לבדוק את ${topRisk.player.name} לפני האימון`, reason: topRisk.mainReason, href: `/coach/player/${topRisk.player.id}` });
-  }
-  if (context.missingPre.length) {
-    actions.push({ icon: "▤", title: `להזכיר ל־${context.missingPre.length} שחקנים למלא דוח מוכנות`, reason: context.missingPre.slice(0, 4).map((player) => player.name).join(", "), href: "/coach/reports" });
-  }
-  if (context.status.gpsLoadAlerts.length) {
-    actions.push({ icon: "📡", title: "לעבור על חריגות GPS מהפעילות האחרונה", reason: `${context.status.gpsLoadAlerts.length} התראות GPS / עומס`, href: "/coach/gps" });
+  const missingPlayers = unique([...context.missingPre, ...context.missingPost].map((player) => player.id))
+    .map((playerId) => context.activePlayers.find((player) => player.id === playerId))
+    .filter(Boolean);
+  if (missingPlayers.length) {
+    actions.push({
+      icon: "▤",
+      title: `להזכיר ל־${missingPlayers.length} שחקנים להשלים דוחות`,
+      summary: `${context.missingPre.length} מוכנות · ${context.missingPost.length} RPE`,
+      href: "/coach/reports",
+      details: missingPlayers.map((player) => ({
+        name: player.name,
+        reason: [context.missingPre.some((item) => item.id === player.id) ? "חסר דוח מוכנות" : "", context.missingPost.some((item) => item.id === player.id) ? "חסר דוח RPE" : ""].filter(Boolean).join(" · "),
+        action: "לשלוח תזכורת ולבקש השלמה.",
+        severity: "Low"
+      }))
+    });
   }
   if (context.status.painAlerts.length) {
-    const first = context.status.painAlerts[0];
-    actions.push({ icon: "✚", title: "לבדוק שחקנים עם דיווחי כאב", reason: first ? `${first.player ? first.player.name : "שחקן"} - ${first.reason}` : "דיווח כאב", href: first && first.player ? `/coach/player/${first.player.id}/pain` : "/coach/analytics" });
+    actions.push({
+      icon: "+",
+      title: `לבצע מעקב כאב אצל ${context.status.painAlerts.length} שחקנים`,
+      summary: "שיחה קצרה לפני הפעילות",
+      href: "/coach/analytics",
+      details: context.status.painAlerts.map((item) => ({ name: item.player?.name || "שחקן", reason: item.details || item.reason, action: "לברר מצב עדכני לפני קביעת עומס.", severity: item.details?.includes("חוזר") ? "High" : "Medium" }))
+    });
+  }
+  if (context.status.gpsLoadAlerts.length) {
+    actions.push({
+      icon: "GPS",
+      title: "לעבור על חריגות GPS ועומס",
+      summary: `${context.status.gpsLoadAlerts.length} פריטים לבדיקה`,
+      href: "/coach/gps",
+      details: context.status.gpsLoadAlerts.map((item) => ({ name: item.player?.name || "קבוצה", reason: item.reason, action: "לבחון דקות, HSR ועומס לפני הפעילות הבאה.", severity: "High" }))
+    });
   }
   if (context.status.hydrationAlerts.length) {
-    const first = context.status.hydrationAlerts[0];
-    actions.push({ icon: "💧", title: "לבדוק הידרציה אצל שחקנים עם איבוד נוזלים גבוה", reason: first ? `${first.player ? first.player.name : "שחקן"} - ${first.reason}` : "איבוד נוזלים", href: first && first.player ? `/coach/player/${first.player.id}/hydration` : "/coach/analytics" });
+    actions.push({
+      icon: "H₂O",
+      title: `להכין מעקב הידרציה ל־${context.status.hydrationAlerts.length} שחקנים`,
+      summary: "הנחיית שתייה ושקילה חוזרת",
+      href: "/coach/analytics",
+      details: context.status.hydrationAlerts.map((item) => ({ name: item.player?.name || "שחקן", reason: item.reason, action: "להנחות שתייה ולבדוק התאוששות.", severity: item.report?.hydration?.tone === "red" ? "High" : "Medium" }))
+    });
   }
-  if (context.missingPost.length && actions.length < 5) {
-    actions.push({ icon: "RPE", title: "להשלים דוחות RPE חסרים", reason: `${context.missingPost.length} שחקנים עדיין לא מילאו דוח אחרי פעילות`, href: "/coach/reports" });
+  const workloadItems = priorityItems.filter((item) => item.reasons.some((reason) => /עומס|RPE|שינה|מוכנות/.test(reason)));
+  if (workloadItems.length) {
+    actions.push({
+      icon: "↗",
+      title: `לבחון התאמת עומס ל־${workloadItems.length} שחקנים`,
+      summary: "לפי מוכנות, שינה ועומס אחרון",
+      href: "/coach/analytics",
+      details: workloadItems.map((item) => ({ name: item.player.name, reason: item.reasons.join(" · "), action: "להחליט אם להשאיר, להפחית או להתאים את העומס.", severity: item.severity }))
+    });
   }
   if (!actions.length) {
-    actions.push({ icon: "✓", title: "להמשיך מעקב שגרתי", reason: "אין פעולה דחופה בתדרוך היומי.", href: "/coach/calendar" });
+    actions.push({ icon: "✓", title: "להמשיך מעקב שגרתי", summary: "אין משימה דחופה להיום", href: "/coach/calendar", details: [] });
   }
   return actions;
 }
 
+function renderCoachHomeActions(actions) {
+  const visible = actions.slice(0, 4);
+  const hidden = actions.slice(4);
+  return `
+    <section class="section coach-home-actions">
+      <div class="section-title">
+        <h3>פעולות מומלצות</h3>
+        <span>${actions.length} משימות</span>
+      </div>
+      <div class="coach-action-grid">
+        ${visible.map(renderCoachHomeActionItem).join("")}
+      </div>
+      ${hidden.length ? renderHomeDetailControl(`עוד ${hidden.length} פעולות · הצג הכל`, "כל הפעולות המומלצות", hidden.flatMap((item) => item.details.length ? item.details : [{ name: item.title, reason: item.summary, action: "", severity: "Low" }])) : ""}
+    </section>
+  `;
+}
+
 function renderCoachHomeActionItem(item) {
   return `
-    <a href="${escapeAttr(item.href)}" data-route class="coach-action-card">
+    <article class="coach-action-card home-detail-trigger" tabindex="0" data-home-detail>
       <span>${escapeHtml(item.icon)}</span>
       <div>
-        <strong>${escapeHtml(item.title)} ${coachInfoTip("המלצה אוטומטית לפי הנתונים שנאספו היום. לחיצה על הכרטיס תפתח את המסך הרלוונטי.")}</strong>
-        <p>${escapeHtml(item.reason)}</p>
+        <strong>${escapeHtml(item.title)}</strong>
+        <p>${escapeHtml(item.summary)}</p>
+        <a href="${escapeAttr(item.href)}" data-route class="text-link">פתיחת מסך</a>
       </div>
-    </a>
+      ${renderHomeDetailPopover(item.title, item.details)}
+    </article>
+  `;
+}
+
+function renderHomeDetailControl(label, title, rows) {
+  return `
+    <div class="home-detail-control home-detail-trigger" role="button" tabindex="0" data-home-detail aria-label="${escapeAttr(label)}">
+      <span>${escapeHtml(label)}</span>
+      ${renderHomeDetailPopover(title, rows)}
+    </div>
+  `;
+}
+
+function renderHomeDetailPopover(title, rows = []) {
+  return `
+    <div class="home-detail-popover" role="tooltip">
+      <strong class="home-detail-title">${escapeHtml(title)}</strong>
+      <div class="home-detail-list">
+        ${rows.length ? rows.map((row) => `
+          <div class="home-detail-row${row.hideBadge ? " no-badge" : ""}">
+            ${row.hideBadge ? "" : `<span class="severity-badge ${escapeAttr(row.tone || String(row.severity || "Low").toLowerCase())}">${escapeHtml(row.statusLabel || severityLabel(row.severity || "Low"))}</span>`}
+            <div>
+              <b>${escapeHtml(row.name || "קבוצה")}</b>
+              ${row.reason ? `<p>${escapeHtml(row.reason)}</p>` : ""}
+              ${row.action ? `<small>${escapeHtml(row.action)}</small>` : ""}
+            </div>
+          </div>
+        `).join("") : `<p class="muted-text">אין פרטים נוספים.</p>`}
+      </div>
+    </div>
   `;
 }
 
 function buildCoachHomeSquadStatus(context) {
-  const redIds = new Set(context.status.riskPlayers.filter((row) => row.severity > 1).map((row) => row.player.id));
-  const yellowIds = new Set(context.status.riskPlayers.filter((row) => row.severity <= 1 && !redIds.has(row.player.id)).map((row) => row.player.id));
-  return {
-    normal: Math.max(0, context.activePlayers.length - redIds.size - yellowIds.size),
-    watch: yellowIds.size,
-    check: redIds.size
-  };
+  const readinessByPlayer = new Map(context.readinessToday.map((report) => [report.playerId, report]));
+  const postByPlayer = new Map(context.postToday.map((report) => [report.playerId, report]));
+  const gpsByPlayer = new Map();
+  context.status.gpsToday.filter((record) => record.riskFlags.length).forEach((record) => {
+    gpsByPlayer.set(record.playerId, unique([...(gpsByPlayer.get(record.playerId) || []), ...record.riskFlags]));
+  });
+  const weekByPlayer = new Map(context.weekRows.map((row) => [row.player.id, row]));
+  const groups = { normal: [], watch: [], check: [] };
+  context.activePlayers.forEach((player) => {
+    const status = getDashboardPlayerDailyStatus(player, readinessByPlayer.get(player.id), postByPlayer.get(player.id), gpsByPlayer, weekByPlayer);
+    const item = { player, reason: status.reasons.join(" · ") || "ללא חריגה מרכזית" };
+    if (status.tone === "red") groups.check.push(item);
+    else if (status.tone === "yellow") groups.watch.push(item);
+    else groups.normal.push(item);
+  });
+  return groups;
 }
 
 function renderCoachHomeSquadCard(squad) {
   return `
     <article class="surface coach-home-card squad-card">
-      <div class="coach-home-card-title"><span>●</span><h3>מצב סגל ${coachInfoTip("חלוקה מהירה של הסגל לפי מצב יומי: תקין, במעקב או לבדיקה לפי דוחות והתראות.")}</h3></div>
+      <div class="coach-home-card-title"><span>●</span><h3>מצב סגל</h3></div>
       <div class="squad-status-grid">
-        <div class="green" ${coachTooltipAttrs("שחקנים ללא חריגה מרכזית בדוחות היום.")}><strong>${squad.normal}</strong><span>תקינים</span></div>
-        <div class="yellow" ${coachTooltipAttrs("שחקנים עם סימן שמצריך מעקב, אך לא בהכרח בדיקה מיידית.")}><strong>${squad.watch}</strong><span>במעקב</span></div>
-        <div class="red" ${coachTooltipAttrs("שחקנים עם סימן משמעותי שמומלץ לבדוק לפני הפעילות.")}><strong>${squad.check}</strong><span>לבדיקה</span></div>
+        ${renderSquadStatusCategory("green", "תקינים", squad.normal, "Low")}
+        ${renderSquadStatusCategory("yellow", "במעקב", squad.watch, "Medium")}
+        ${renderSquadStatusCategory("red", "לבדיקה", squad.check, "High")}
       </div>
     </article>
+  `;
+}
+
+function renderSquadStatusCategory(tone, label, items, severity) {
+  return `
+    <div class="${escapeAttr(tone)} home-detail-trigger" tabindex="0" data-home-detail>
+      <strong>${items.length}</strong><span>${escapeHtml(label)}</span>
+      ${renderHomeDetailPopover(label, items.map((item) => ({ name: item.player.name, reason: item.reason, action: tone === "red" ? "לבדוק לפני הפעילות." : tone === "yellow" ? "להמשיך מעקב היום." : "אין פעולה נדרשת.", severity })))}
+    </div>
   `;
 }
 
 function renderCoachHomeReportsCard(context) {
   const total = context.activePlayers.length;
+  const readinessSubmitted = context.readinessToday.map((report) => report.playerName).filter(Boolean);
+  const rpeSubmitted = context.postToday.map((report) => report.playerName).filter(Boolean);
+  const detailRows = [
+    { name: `הגישו מוכנות (${readinessSubmitted.length})`, reason: readinessSubmitted.join(", ") || "אין", statusLabel: "הוגש", tone: "green" },
+    { name: `חסרים מוכנות (${context.missingPre.length})`, reason: context.missingPre.map((player) => player.name).join(", ") || "אין", statusLabel: "חסר", tone: "medium" },
+    { name: `הגישו RPE (${rpeSubmitted.length})`, reason: rpeSubmitted.join(", ") || "אין", statusLabel: "הוגש", tone: "green" },
+    { name: `חסרים RPE (${context.missingPost.length})`, reason: context.missingPost.map((player) => player.name).join(", ") || "אין", statusLabel: "חסר", tone: "medium" }
+  ];
   return `
-    <article class="surface coach-home-card">
-      <div class="coach-home-card-title"><span>▤</span><h3>דוחות היום ${coachInfoTip("מעקב מהיר אחרי השלמת דוח מוכנות לפני אימון ודוח RPE אחרי אימון עבור שחקני הסגל הפעילים.")}</h3></div>
-      <div class="brief-stat-list">
-        <p ${coachTooltipAttrs("כמה שחקנים הגישו דוח מוכנות היום מתוך כלל השחקנים הפעילים.")}><span>דוח מוכנות</span><strong>${context.readinessToday.length} מתוך ${total} הוגשו</strong></p>
-        <p ${coachTooltipAttrs("כמה שחקנים פעילים עדיין לא הגישו דוח מוכנות להיום.")}><span>חסר דוח מוכנות</span><strong>${context.missingPre.length} חסרים</strong></p>
-        <p ${coachTooltipAttrs("כמה שחקנים הגישו דוח RPE אחרי פעילות היום מתוך כלל השחקנים הפעילים.")}><span>דוח RPE</span><strong>${context.postToday.length} מתוך ${total} הוגשו</strong></p>
-        <p ${coachTooltipAttrs("כמה שחקנים פעילים עדיין לא הגישו דוח RPE להיום.")}><span>חסר דוח RPE</span><strong>${context.missingPost.length} חסרים</strong></p>
+    <article class="surface coach-home-card coach-home-card-compact home-detail-trigger" tabindex="0" data-home-detail>
+      <div class="coach-home-card-title"><span>▤</span><h3>דוחות היום</h3></div>
+      <div class="report-completion-summary">
+        <p><span>דוחות מוכנות</span><strong>${context.readinessToday.length}/${total}</strong></p>
+        <p><span>דוחות RPE</span><strong>${context.postToday.length}/${total}</strong></p>
       </div>
+      <a href="/coach/reports" data-route class="text-link">ניתוח דוחות</a>
+      ${renderHomeDetailPopover("פירוט דוחות היום", detailRows)}
     </article>
   `;
 }
 
 function getCoachHomeLatestGpsActivity() {
-  const sessionItem = [...state.gpsSessions].sort((a, b) => b.date.localeCompare(a.date))[0] || null;
+  const sessionIdsWithRecords = new Set(state.gpsRecords.map((record) => record.gpsSessionId));
+  const sessionItem = state.gpsSessions
+    .filter((item) => item.date <= todayIso() && sessionIdsWithRecords.has(item.id))
+    .sort((a, b) => b.date.localeCompare(a.date))[0] || null;
   if (!sessionItem) return null;
   const records = state.gpsRecords.filter((record) => record.gpsSessionId === sessionItem.id).map(getComputedGpsRecord);
-  const preferredRecords = getFullPeriodPreferred(records);
+  const preferredRecords = getFullPeriodPreferred(records).map(enrichPlayerGpsRecord);
+  const averageGpsLoad = average(preferredRecords.map((record) => record.gpsLoad));
+  const averageHsr = average(preferredRecords.map((record) => record.highSpeedRunning));
+  const averageSprintDistance = average(preferredRecords.map((record) => record.sprintDistance));
+  const alertRecords = preferredRecords.filter((record) => record.riskFlags.length);
+  const aboveAverageHsr = preferredRecords.filter((record) => record.highSpeedRunning > averageHsr * 1.1);
   return {
     session: sessionItem,
+    records: preferredRecords,
     playerCount: unique(preferredRecords.map((record) => record.playerId || record.playerName).filter(Boolean)).length,
-    alertCount: preferredRecords.filter((record) => record.riskFlags.length).length
+    averageGpsLoad,
+    gpsLoadScore: loadValueToScore(averageGpsLoad),
+    averageHsr,
+    averageSprintDistance,
+    alertCount: alertRecords.length,
+    alertRecords,
+    aboveAverageHsr
   };
 }
 
@@ -2781,39 +4114,87 @@ function renderCoachHomeGpsCard(latestGps) {
     `;
   }
   const sessionItem = latestGps.session;
+  const detailRows = [
+    {
+      name: sessionItem.sessionName,
+      reason: `${formatDateDisplay(sessionItem.date)} · ${formatGpsSessionType(sessionItem.activityType || sessionItem.type)} · ${latestGps.playerCount} שחקנים`,
+      hideBadge: true
+    },
+    ...latestGps.alertRecords.map((record) => {
+      const useHsr = record.riskFlags.some((flag) => /HSR|ספרינט/.test(flag));
+      const value = useHsr ? record.highSpeedRunning : record.gpsLoad;
+      const teamAverage = useHsr ? latestGps.averageHsr : latestGps.averageGpsLoad;
+      const difference = calculateChangePercent(value, teamAverage);
+      return {
+        name: record.playerName,
+        reason: `${record.riskFlags.join(" · ")} · ${useHsr ? "HSR" : "GPS Load"} ${formatInteger(value)} · ${formatPercent(difference)} מול ממוצע הקבוצה`,
+        action: "לבחון את המדד יחד עם דקות, RPE ומוכנות.",
+        severity: "High"
+      };
+    }),
+    ...latestGps.aboveAverageHsr.filter((record) => !latestGps.alertRecords.some((alert) => alert.playerId === record.playerId)).slice(0, 6).map((record) => ({
+      name: record.playerName,
+      reason: `HSR ${formatInteger(record.highSpeedRunning)} מ׳ · ${formatPercent(calculateChangePercent(record.highSpeedRunning, latestGps.averageHsr))} מול ממוצע הקבוצה`,
+      action: "מידע להשוואה; אין התראה אוטומטית.",
+      severity: "Low"
+    }))
+  ];
   return `
-    <article class="surface coach-home-card">
-      <div class="coach-home-card-title"><span>📡</span><h3>פעילות GPS אחרונה ${coachInfoTip("סיכום קצר של סשן ה-GPS האחרון: סוג פעילות, מספר שחקנים וכמה התראות נוצרו.")}</h3></div>
-      <div class="brief-stat-list">
-        <p ${coachTooltipAttrs("שם הפעילות האחרונה שיובאה למודול GPS.")}><span>סשן</span><strong>${escapeHtml(sessionItem.sessionName)}</strong></p>
-        <p ${coachTooltipAttrs("תאריך הפעילות האחרונה עם נתוני GPS.")}><span>תאריך</span><strong>${escapeHtml(formatDateDisplay(sessionItem.date))}</strong></p>
-        <p ${coachTooltipAttrs("סוג הפעילות כפי שהוגדר בעת ייבוא GPS.")}><span>סוג</span><strong>${escapeHtml(formatGpsSessionType(sessionItem.activityType || sessionItem.type))}</strong></p>
-        <p ${coachTooltipAttrs("מספר השחקנים עם רשומת GPS בפעילות האחרונה.")}><span>שחקנים</span><strong>${latestGps.playerCount}</strong></p>
-        <p ${coachTooltipAttrs("מספר השחקנים עם דגל GPS או עומס בפעילות האחרונה.")}><span>התראות</span><strong>${latestGps.alertCount}</strong></p>
+    <article class="surface coach-home-card home-detail-trigger" tabindex="0" data-home-detail>
+      <div class="coach-home-card-title"><span>GPS</span><h3>פעילות GPS אחרונה</h3></div>
+      <div class="brief-stat-list coach-gps-brief">
+        <p><span>עומס GPS ממוצע</span><strong>${latestGps.gpsLoadScore}/5</strong></p>
+        <p><span>חריגות GPS</span><strong>${latestGps.alertCount}</strong></p>
+        <p><span>מעל ממוצע HSR</span><strong>${latestGps.aboveAverageHsr.length} שחקנים</strong></p>
       </div>
       <a href="/coach/gps" data-route class="text-link">מעבר ל־GPS</a>
+      ${renderHomeDetailPopover(`GPS אחרון · HSR ממוצע ${formatInteger(latestGps.averageHsr)} מ׳ · Sprint ממוצע ${formatInteger(latestGps.averageSprintDistance)} מ׳`, detailRows)}
     </article>
   `;
 }
 
 function buildCoachHomePainSummary(context) {
-  const repeated = context.status.painAlerts.filter((item) => item.reason && item.reason.includes("חוזר"));
+  const byPlayer = new Map();
+  [...context.readinessToday, ...context.postToday].forEach((report) => {
+    if (!report.painArea || report.painArea === NO_PAIN) return;
+    const player = getPlayer(report.playerId);
+    const repeated = countWeeklyPainReports(report.playerId, report.painArea, report.date) >= 2;
+    const current = byPlayer.get(report.playerId);
+    const entry = {
+      player,
+      painArea: report.painArea,
+      painSide: report.painSide || "לא צוין",
+      painIntensity: Number(report.painIntensity) || null,
+      date: report.date,
+      repeated
+    };
+    if (!current || (entry.painIntensity || 0) > (current.painIntensity || 0)) byPlayer.set(report.playerId, entry);
+    else if (repeated) current.repeated = true;
+  });
+  const entries = [...byPlayer.values()].sort((a, b) => Number(b.repeated) - Number(a.repeated) || (b.painIntensity || 0) - (a.painIntensity || 0));
   return {
-    count: context.status.painAlerts.length,
-    repeatedCount: repeated.length,
-    players: unique(context.status.painAlerts.map((item) => item.player && item.player.name).filter(Boolean))
+    count: entries.length,
+    repeatedCount: entries.filter((item) => item.repeated).length,
+    entries
   };
 }
 
 function renderCoachHomePainCard(pain) {
+  const detailRows = pain.entries.map((item) => ({
+    name: item.player?.name || "שחקן",
+    reason: `${item.painArea} · ${item.painSide}${item.painIntensity ? ` · עוצמה ${item.painIntensity}/10` : ""} · ${formatDateDisplay(item.date)}${item.repeated ? " · דיווח חוזר" : ""}`,
+    action: item.repeated || item.painIntensity >= 7 ? "דורש בדיקה לפני הפעילות." : "דורש מעקב ושיחה קצרה.",
+    severity: item.repeated || item.painIntensity >= 7 ? "High" : "Medium"
+  }));
   return `
-    <article class="surface coach-home-card">
-      <div class="coach-home-card-title"><span>✚</span><h3>כאב / תשומת לב ${coachInfoTip("דיווחי כאב מהדוחות היומיים. לא אבחנה רפואית, רק סימון לשיחה או בדיקה.")}</h3></div>
+    <article class="surface coach-home-card home-detail-trigger" tabindex="0" data-home-detail>
+      <div class="coach-home-card-title"><span>+</span><h3>כאב / תשומת לב</h3></div>
       <div class="brief-stat-list">
-        <p ${coachTooltipAttrs("מספר השחקנים שדיווחו היום על כאב או רגישות.")}><span>דיווחי כאב פעילים</span><strong>${pain.count}</strong></p>
-        <p ${coachTooltipAttrs("כאב שחוזר באותו אזור יותר מפעם אחת בשבוע.")}><span>כאב חוזר</span><strong>${pain.repeatedCount}</strong></p>
+        <p><span>דיווחי כאב</span><strong>${pain.count}</strong></p>
+        <p><span>דיווחים חוזרים</span><strong>${pain.repeatedCount}</strong></p>
       </div>
-      <p class="brief-player-line">${pain.players.length ? escapeHtml(pain.players.slice(0, 5).join(", ")) : "אין דיווחי כאב חריגים"}</p>
+      <small class="card-context-line">${pain.count ? "לחץ לפירוט שחקנים ואזורים" : "אין דיווחי כאב פעילים"}</small>
+      ${renderHomeDetailPopover("דיווחי כאב פעילים", detailRows)}
     </article>
   `;
 }
@@ -2826,49 +4207,73 @@ function buildCoachHomeHydrationSummary(context) {
 }
 
 function renderCoachHomeHydrationCard(summary) {
+  const detailRows = [...summary.alerts]
+    .sort((a, b) => Number(b.report.hydration?.lossPercent || 0) - Number(a.report.hydration?.lossPercent || 0))
+    .map((item) => ({
+      name: item.player?.name || "שחקן",
+      reason: `${formatNumber(item.report.hydration.lossPercent)}% איבוד נוזלים · ${formatDateDisplay(item.report.date)} · ${item.report.sessionType}`,
+      action: item.report.hydration.lossPercent > 2 ? "דורש מעקב, הנחיית שתייה ובדיקה חוזרת." : "לשים לב לשתייה ולהתאוששות.",
+      severity: item.report.hydration.lossPercent > 2 ? "High" : "Medium"
+    }));
   return `
-    <article class="surface coach-home-card">
-      <div class="coach-home-card-title"><span>💧</span><h3>הידרציה ${coachInfoTip("מבוסס על השוואת משקל לפני ואחרי פעילות כאשר שני הערכים קיימים.")}</h3></div>
+    <article class="surface coach-home-card home-detail-trigger" tabindex="0" data-home-detail>
+      <div class="coach-home-card-title"><span>H₂O</span><h3>הידרציה</h3></div>
       <div class="brief-stat-list">
-        <p ${coachTooltipAttrs("מספר השחקנים עם איבוד נוזלים שמצריך תשומת לב.")}><span>שחקנים בסיכון</span><strong>${summary.alerts.length}</strong></p>
-        <p ${coachTooltipAttrs("איבוד הנוזלים הגבוה ביותר שנמדד היום באחוזים.")}><span>איבוד נוזלים גבוה</span><strong>${summary.highest ? `${formatNumber(summary.highest)}%` : "אין"}</strong></p>
-        <p ${coachTooltipAttrs("שחקנים מעל 2% איבוד נוזלים, מצב שמצריך מעקב.")}><span>מעל 2%</span><strong>${summary.aboveTwo.length}</strong></p>
+        <p><span>מעל 1%</span><strong>${summary.alerts.length} שחקנים</strong></p>
+        <p><span>מעל 2%</span><strong>${summary.aboveTwo.length} שחקנים</strong></p>
+        <p><span>איבוד מרבי</span><strong>${summary.highest ? `${formatNumber(summary.highest)}%` : "אין"}</strong></p>
       </div>
-      <p class="brief-player-line">${summary.aboveTwo.length ? escapeHtml(summary.aboveTwo.map((item) => item.player && item.player.name).filter(Boolean).join(", ")) : "אין שחקנים מעל 2%"}</p>
+      ${renderHomeDetailPopover("שחקנים עם איבוד נוזלים מעל 1%", detailRows)}
     </article>
   `;
 }
 
-function getCoachHomeUpcomingItems() {
-  const today = todayIso();
-  const gpsItems = state.gpsSessions
-    .filter((sessionItem) => sessionItem.date >= today)
-    .map((sessionItem) => ({
-      date: sessionItem.date,
-      title: sessionItem.sessionName,
-      type: formatGpsSessionType(sessionItem.activityType || sessionItem.type),
-      tone: (sessionItem.activityType || sessionItem.type) === "training" ? "green" : (sessionItem.activityType || sessionItem.type) === "training_match" ? "purple" : "blue"
-    }));
-  const restItems = state.sessions
-    .filter((sessionItem) => sessionItem.date >= today && sessionItem.sessionType === "מנוחה")
-    .map((sessionItem) => ({ date: sessionItem.date, title: "יום מנוחה", type: "מנוחה", tone: "neutral" }));
-  return [...gpsItems, ...restItems].sort((a, b) => a.date.localeCompare(b.date)).slice(0, 3);
+function buildCoachHomeRecentLoadSummary() {
+  const dates = Array.from({ length: 7 }, (_, index) => addDays(todayIso(), index - 6));
+  const daily = dates.map((date) => {
+    const gpsSessionIds = state.gpsSessions.filter((sessionItem) => sessionItem.date === date).map((sessionItem) => sessionItem.id);
+    const gpsRecords = getFullPeriodPreferred(state.gpsRecords.filter((record) => gpsSessionIds.includes(record.gpsSessionId)));
+    const rpeReports = state.reports.filter((report) => report.date === date).map(getComputedReport);
+    const gpsLoad = gpsRecords.length ? average(gpsRecords.map((record) => record.gpsLoad)) : 0;
+    const rpeLoad = rpeReports.length ? average(rpeReports.map((report) => report.trainingLoad)) : 0;
+    return {
+      date,
+      sessions: unique(gpsRecords.map((record) => record.gpsSessionId)).length,
+      gpsLoad,
+      rpeLoad,
+      gpsScore: gpsLoad ? loadValueToScore(gpsLoad) : null,
+      rpeScore: rpeLoad ? loadValueToScore(rpeLoad) : null
+    };
+  });
+  const activeDays = daily.filter((item) => item.gpsLoad || item.rpeLoad);
+  const highestDay = activeDays.sort((a, b) => (b.gpsLoad + b.rpeLoad) - (a.gpsLoad + a.rpeLoad))[0] || null;
+  return {
+    daily,
+    sessions: sum(daily.map((item) => item.sessions)),
+    averageGpsLoad: average(activeDays.filter((item) => item.gpsLoad).map((item) => item.gpsLoad)),
+    averageRpeLoad: average(activeDays.filter((item) => item.rpeLoad).map((item) => item.rpeLoad)),
+    highestDay
+  };
 }
 
-function renderCoachHomeCalendarCard(items) {
+function renderCoachHomeRecentLoadCard(summary) {
+  const detailRows = [...summary.daily].reverse().map((item) => ({
+    name: formatDateDisplay(item.date),
+    reason: `GPS ${item.gpsScore ? `${item.gpsScore}/5 · ${formatInteger(item.gpsLoad)}` : "אין נתון"} · RPE ${item.rpeScore ? `${item.rpeScore}/5 · ${formatInteger(item.rpeLoad)}` : "אין נתון"}`,
+    action: item.sessions ? `${item.sessions} פעילויות עם GPS` : "ללא פעילות GPS",
+    hideBadge: true
+  }));
   return `
-    <article class="surface coach-home-card">
-      <div class="coach-home-card-title"><span>◌</span><h3>לוח שנה קרוב ${coachInfoTip("שלושת האירועים הקרובים לפי פעילויות GPS וימי מנוחה שתוכננו.")}</h3></div>
-      ${items.length ? `
-        <div class="brief-upcoming-list">
-          ${items.map((item) => `
-            <a href="/coach/calendar" data-route class="brief-upcoming-item ${escapeAttr(item.tone)}">
-              <strong>${escapeHtml(item.title)}</strong>
-              <span>${escapeHtml(formatDateDisplay(item.date))} · ${escapeHtml(item.type)}</span>
-            </a>
-          `).join("")}
-        </div>
-      ` : `<p class="muted-text">אין אירועים קרובים בלוח השנה</p>`}
+    <article class="surface coach-home-card home-detail-trigger" tabindex="0" data-home-detail>
+      <div class="coach-home-card-title"><span>7D</span><h3>עומס 7 ימים אחרונים</h3></div>
+      <div class="brief-stat-list">
+        <p><span>פעילויות</span><strong>${summary.sessions}</strong></p>
+        <p><span>GPS Load ממוצע</span><strong>${summary.averageGpsLoad ? formatInteger(summary.averageGpsLoad) : "אין"}</strong></p>
+        <p><span>RPE Load ממוצע</span><strong>${summary.averageRpeLoad ? formatInteger(summary.averageRpeLoad) : "אין"}</strong></p>
+      </div>
+      <small class="card-context-line">${summary.highestDay ? `יום העומס הגבוה: ${escapeHtml(formatDateDisplay(summary.highestDay.date))}` : "אין נתוני עומס לשבוע האחרון"}</small>
+      <a href="/coach/calendar" data-route class="text-link">פתיחת לוח שנה</a>
+      ${renderHomeDetailPopover("עומס יומי בשבעת הימים האחרונים", detailRows)}
     </article>
   `;
 }
@@ -2903,6 +4308,8 @@ function renderCoachDashboard() {
 
     ${renderCoachAiSummary(dashboardStatus)}
 
+    ${renderDecisionPriorityPanel(dashboardStatus.smartAlerts, "דורש פעולה עכשיו")}
+
     <section class="dashboard-kpi-grid" aria-label="מדדי יום מרכזיים">
       ${dashboardStatus.kpis.map(renderDashboardKpiCard).join("")}
     </section>
@@ -2926,20 +4333,20 @@ function renderCoachDashboard() {
       ${renderRiskPlayersSection(dashboardStatus.riskPlayers)}
     </section>
 
-    <section class="section dashboard-chart-hub">
-      <div class="section-title">
-        <h3>מבט מגמות יומי</h3>
-        <span>בחר מדד אחד לצפייה</span>
-      </div>
-      ${renderDashboardChartHub(dashboardStatus)}
-    </section>
-
     <section class="section">
       <div class="section-title">
         <h3>מרכז התראות</h3>
         <span>${dashboardStatus.alertCount} התראות</span>
       </div>
       ${renderAlertCenter(dashboardStatus.alertGroups)}
+    </section>
+
+    <section class="section dashboard-chart-hub">
+      <div class="section-title">
+        <h3>מבט מגמות יומי</h3>
+        <span>ניתוח לאחר בדיקת ההתראות</span>
+      </div>
+      ${renderDashboardChartHub(dashboardStatus)}
     </section>
 
     <section class="section">
@@ -2990,6 +4397,7 @@ function buildCoachDailyStatus(activePlayers, readinessToday, postToday, missing
     .filter((row) => row.weeklyLoadRisk && row.weeklyLoadRisk.tone !== "green")
     .map((row) => ({ player: row.player, reason: `${row.weeklyLoadRisk.label} ${formatPercent(row.loadChangePercent)}`, row }));
   const gpsLoadAlerts = [...gpsRiskItems, ...loadAlerts];
+  const smartAlerts = buildSmartAlertsForDate(activePlayers, selectedDate, readinessToday, postToday, gpsToday, missingPre, missingPost);
   const missingItems = [
     ...missingPre.map((player) => ({ player, reason: "חסר דוח מוכנות" })),
     ...missingPost.map((player) => ({ player, reason: "חסר דוח RPE" }))
@@ -3008,7 +4416,8 @@ function buildCoachDailyStatus(activePlayers, readinessToday, postToday, missing
     weekRows,
     painAlerts,
     hydrationAlerts,
-    gpsLoadAlerts
+    gpsLoadAlerts,
+    smartAlerts
   });
   const alertCount = sum(Object.values(alertGroups).map((items) => items.length));
   const kpis = buildDashboardKpis({
@@ -3053,6 +4462,7 @@ function buildCoachDailyStatus(activePlayers, readinessToday, postToday, missing
     painAlerts,
     hydrationAlerts,
     gpsLoadAlerts,
+    smartAlerts,
     kpis,
     alertGroups,
     alertCount,
@@ -3282,21 +4692,174 @@ function renderRiskPlayersSection(rows) {
 function buildDashboardAlertGroups(data) {
   const highRpe = data.postToday
     .filter((report) => report.rpe >= state.settings.rpeHigh)
-    .map((report) => dashboardAlert(getPlayer(report.playerId), "RPE גבוה", `RPE ${report.rpe}, עומס ${formatInteger(report.trainingLoad)}`, "לבדוק התאוששות ולשקול הורדת עומס."));
+    .map((report) => dashboardAlert(getPlayer(report.playerId), "RPE גבוה", `RPE ${report.rpe}, עומס ${formatInteger(report.trainingLoad)}`, "לבדוק התאוששות ולשקול הורדת עומס.", "Medium"));
   return {
-    "GPS": data.gpsLoadAlerts.map((item) => dashboardAlert(item.player, "GPS/עומס", item.reason, "לבחון דקות, HSR ועומס שבועי.")),
-    "כאבים": data.painAlerts.map((item) => dashboardAlert(item.player, "דיווח כאב", item.reason, "לעקוב ולערב צוות רפואי אם הכאב חוזר.")),
-    "הידרציה": data.hydrationAlerts.map((item) => dashboardAlert(item.player, "הידרציה", item.reason, "הנחיית שתייה, התאוששות ושקילה חוזרת.")),
+    "מגמות": data.smartAlerts || [],
+    "GPS": data.gpsLoadAlerts.map((item) => dashboardAlert(item.player, "GPS/עומס", item.reason, "לבחון דקות, HSR ועומס שבועי.", "High")),
+    "כאבים": data.painAlerts.map((item) => dashboardAlert(item.player, "דיווח כאב", item.reason, "לעקוב ולערב צוות מקצועי אם הכאב חוזר.", "Medium")),
+    "הידרציה": data.hydrationAlerts.map((item) => dashboardAlert(item.player, "הידרציה", item.reason, "הנחיית שתייה, התאוששות ושקילה חוזרת.", item.report.hydration && item.report.hydration.tone === "red" ? "High" : "Medium")),
     "RPE": highRpe,
     "דוחות חסרים": [
-      ...data.missingPre.map((player) => dashboardAlert(player, "חסר דוח מוכנות", "לא מילא דוח לפני אימון", "להזכיר מילוי לפני האימון.")),
-      ...data.missingPost.map((player) => dashboardAlert(player, "חסר דוח RPE", "לא מילא דוח אחרי אימון", "להשלים דוח אחרי האימון."))
+      ...data.missingPre.map((player) => dashboardAlert(player, "חסר דוח מוכנות", "לא מילא דוח לפני אימון", "להזכיר מילוי לפני האימון.", "Low")),
+      ...data.missingPost.map((player) => dashboardAlert(player, "חסר דוח RPE", "לא מילא דוח אחרי אימון", "להשלים דוח אחרי האימון.", "Low"))
     ]
   };
 }
 
-function dashboardAlert(player, type, reason, action) {
-  return { player, type, reason, action };
+function dashboardAlert(player, type, reason, action, severity = "Medium", href = "") {
+  return { player, type, title: type, reason, action, severity, href: href || (player ? `/coach/player/${player.id}` : "/coach/analytics") };
+}
+
+function buildSmartAlertsForDate(activePlayers, selectedDate, readinessToday, postToday, gpsToday, missingPre, missingPost) {
+  const alerts = [];
+  const gpsTodayByPlayer = new Map(gpsToday.map((record) => [record.playerId, record]));
+  const postTodayByPlayer = new Map(postToday.map((report) => [report.playerId, report]));
+  const missingTodayByPlayer = new Map();
+  missingPre.forEach((player) => missingTodayByPlayer.set(player.id, [...(missingTodayByPlayer.get(player.id) || []), "דוח מוכנות"]));
+  missingPost.forEach((player) => missingTodayByPlayer.set(player.id, [...(missingTodayByPlayer.get(player.id) || []), "דוח RPE"]));
+
+  activePlayers.forEach((player) => {
+    const gpsTrend = getPlayerGpsDailySeries(player.id, selectedDate, 5).filter((item) => item.gpsLoad > 0).slice(-3);
+    if (gpsTrend.length === 3 && gpsTrend[0].gpsLoad < gpsTrend[1].gpsLoad && gpsTrend[1].gpsLoad < gpsTrend[2].gpsLoad) {
+      alerts.push(smartAlert(player, "עומס GPS עולה", `עומס GPS עולה 3 פעילויות ברצף: ${gpsTrend.map((item) => formatInteger(item.gpsLoad)).join(" ← ")}`, "High", "לבדוק דקות, HSR והתאוששות לפני עומס נוסף.", `/coach/player/${player.id}/gps`));
+    }
+
+    const sleepTrend = getPlayerReadinessSeries(player.id, selectedDate, 5).filter((item) => Number(item.sleepHours) > 0).slice(-3);
+    if (sleepTrend.length === 3 && sleepTrend[0].sleepHours > sleepTrend[1].sleepHours && sleepTrend[1].sleepHours > sleepTrend[2].sleepHours) {
+      alerts.push(smartAlert(player, "שינה בירידה", `שעות שינה יורדות 2 ימים ברצף: ${sleepTrend.map((item) => `${formatNumber(item.sleepHours)}ש׳`).join(" ← ")}`, sleepTrend[2].sleepHours < 6 ? "High" : "Medium", "לשאול על התאוששות ולהתאים עומס אם צריך.", `/coach/player/${player.id}/sleep`));
+    }
+
+    const post = postTodayByPlayer.get(player.id);
+    const gps = gpsTodayByPlayer.get(player.id);
+    if (post && gps && post.rpe >= state.settings.rpeHigh && Number(gps.gpsLoad) >= 800) {
+      alerts.push(smartAlert(player, "RPE גבוה אחרי עומס GPS גבוה", `RPE ${post.rpe} אחרי עומס GPS ${formatInteger(gps.gpsLoad)}`, "High", "לבדוק התאוששות ולשקול התאמת עומס מחר.", `/coach/player/${player.id}/load`));
+    }
+
+    const repeatedPain = getRepeatedPainAlertForPlayer(player.id, selectedDate);
+    if (repeatedPain) {
+      alerts.push(smartAlert(player, "כאב חוזר", repeatedPain.reason, repeatedPain.severity, "לעקוב בשיחה קצרה לפני פעילות. אין כאן אבחנה רפואית.", `/coach/player/${player.id}/pain`));
+    }
+
+    const missingDays = countPlayerMissingReportDays(player.id, selectedDate, 3);
+    if (missingDays >= 2) {
+      const todayMissing = missingTodayByPlayer.get(player.id);
+      alerts.push(smartAlert(player, "דוחות חסרים מספר ימים", `${missingDays} ימים עם דוח חסר מתוך 3 האחרונים${todayMissing ? ` · היום חסר: ${todayMissing.join(", ")}` : ""}`, "Medium", "להזכיר מילוי עקבי כדי לשמור על תמונת מצב אמינה.", "/coach/reports"));
+    }
+  });
+
+  return sortSmartAlerts(uniqueSmartAlerts(alerts));
+}
+
+function smartAlert(player, title, reason, severity, action, href) {
+  return { player, type: title, title, reason, severity, action, href };
+}
+
+function sortSmartAlerts(alerts) {
+  const rank = { High: 0, Medium: 1, Low: 2 };
+  return alerts.sort((a, b) => (rank[a.severity] ?? 3) - (rank[b.severity] ?? 3) || String(a.player?.name || "").localeCompare(String(b.player?.name || ""), "he"));
+}
+
+function uniqueSmartAlerts(alerts) {
+  const seen = new Set();
+  return alerts.filter((alert) => {
+    const key = `${alert.player?.id || ""}-${alert.title}-${alert.reason}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function getPlayerGpsDailySeries(playerId, selectedDate, days) {
+  const startDate = addDays(selectedDate, -(days - 1));
+  const records = state.gpsRecords
+    .map(getComputedGpsRecord)
+    .filter((record) => record.playerId === playerId && record.date >= startDate && record.date <= selectedDate);
+  const byDate = new Map();
+  records.forEach((record) => {
+    const current = byDate.get(record.date) || [];
+    current.push(record);
+    byDate.set(record.date, current);
+  });
+  return [...byDate.entries()]
+    .sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
+    .map(([date, dayRecords]) => {
+      const preferred = getFullPeriodPreferred(dayRecords);
+      return { date, gpsLoad: average(preferred.map((record) => record.gpsLoad)) || 0 };
+    });
+}
+
+function getPlayerReadinessSeries(playerId, selectedDate, days) {
+  const startDate = addDays(selectedDate, -(days - 1));
+  return state.readinessReports
+    .filter((report) => report.playerId === playerId && report.date >= startDate && report.date <= selectedDate)
+    .map(getComputedReadiness)
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function getRepeatedPainAlertForPlayer(playerId, selectedDate) {
+  const startDate = addDays(selectedDate, -6);
+  const painReports = [
+    ...state.readinessReports.filter((report) => report.playerId === playerId && report.date >= startDate && report.date <= selectedDate),
+    ...state.reports.filter((report) => report.playerId === playerId && report.date >= startDate && report.date <= selectedDate)
+  ].filter((report) => report.painArea && report.painArea !== NO_PAIN);
+  const counts = new Map();
+  painReports.forEach((report) => {
+    const item = counts.get(report.painArea) || { count: 0, maxIntensity: 0 };
+    item.count += 1;
+    item.maxIntensity = Math.max(item.maxIntensity, Number(report.painIntensity) || 0);
+    counts.set(report.painArea, item);
+  });
+  const repeated = [...counts.entries()].find(([, item]) => item.count >= 2);
+  if (!repeated) return null;
+  const [area, item] = repeated;
+  return {
+    severity: item.maxIntensity >= 8 ? "High" : "Medium",
+    reason: `${item.count} דיווחים על ${area} בשבוע האחרון${item.maxIntensity ? ` · עוצמה עד ${item.maxIntensity}/10` : ""}`
+  };
+}
+
+function countPlayerMissingReportDays(playerId, selectedDate, days) {
+  return Array.from({ length: days }, (_, index) => addDays(selectedDate, -index)).filter((date) => {
+    const hasReadiness = state.readinessReports.some((report) => report.playerId === playerId && report.date === date);
+    const hasRpe = state.reports.some((report) => report.playerId === playerId && report.date === date);
+    return !hasReadiness || !hasRpe;
+  }).length;
+}
+
+function severityLabel(severity) {
+  if (severity === "High") return "גבוה";
+  if (severity === "Medium") return "בינוני";
+  return "נמוך";
+}
+
+function severityIcon(severity) {
+  if (severity === "High") return "!";
+  if (severity === "Medium") return "•";
+  return "i";
+}
+
+function renderDecisionPriorityPanel(alerts, title = "דורש פעולה עכשיו") {
+  const topAlerts = sortSmartAlerts([...(alerts || [])]).slice(0, 5);
+  return `
+    <section class="section decision-priority-panel">
+      <div class="section-title compact-title">
+        <h3>${escapeHtml(title)}</h3>
+        <span>${topAlerts.length ? `${topAlerts.length} התראות מרכזיות` : "אין פעולה דחופה"}</span>
+      </div>
+      ${topAlerts.length ? `
+        <div class="decision-alert-grid">
+          ${topAlerts.map((alert) => `
+            <a class="decision-alert-card ${escapeAttr(alert.severity.toLowerCase())}" href="${escapeAttr(alert.href || "/coach/analytics")}" data-route>
+              <span class="severity-badge ${escapeAttr(alert.severity.toLowerCase())}">${escapeHtml(severityLabel(alert.severity))}</span>
+              <strong>${escapeHtml(alert.player ? `${alert.player.name} · ${alert.title}` : alert.title)}</strong>
+              <p>${escapeHtml(alert.reason)}</p>
+              <small>${escapeHtml(alert.action)}</small>
+            </a>
+          `).join("")}
+        </div>
+      ` : `<div class="surface empty compact-empty">אין התראות מגמה שדורשות פעולה מיידית.</div>`}
+    </section>
+  `;
 }
 
 function renderAlertCenter(groups) {
@@ -3324,6 +4887,7 @@ function renderAlertGroup(title, alerts) {
 }
 
 function getAlertGroupIcon(title) {
+  if (title.includes("מגמות")) return "!";
   if (title.includes("GPS")) return "📡";
   if (title.includes("כאב")) return "✚";
   if (title.includes("הידרציה")) return "💧";
@@ -3334,10 +4898,10 @@ function getAlertGroupIcon(title) {
 
 function renderAlertRow(alert) {
   return `
-    <article class="alert-row">
+    <article class="alert-row ${escapeAttr((alert.severity || "Medium").toLowerCase())}">
       <div>
         <strong>${alert.player ? escapeHtml(alert.player.name) : "שחקן לא ידוע"}</strong>
-        <span>${escapeHtml(alert.type)} · ${escapeHtml(alert.reason)}</span>
+        <span><b class="severity-badge ${escapeAttr((alert.severity || "Medium").toLowerCase())}">${escapeHtml(severityLabel(alert.severity || "Medium"))}</b>${escapeHtml(alert.type)} · ${escapeHtml(alert.reason)}</span>
       </div>
       <p>${escapeHtml(alert.action)}</p>
     </article>
@@ -3786,6 +5350,8 @@ function renderCoachReportsAnalysisPage(selectedDate) {
       <a href="/coach" data-route class="btn secondary">חזרה לתדרוך יומי</a>
     </div>
 
+    ${renderReportsDecisionStrip(context)}
+
     <section class="report-analysis-hero surface">
       <div>
         <span class="eyebrow">תמונת מצב מקצועית</span>
@@ -3857,6 +5423,7 @@ function renderCoachReportsAnalysisPage(selectedDate) {
 }
 
 function buildReportsAnalysisContext(selectedDate) {
+  const activePlayers = getActivePlayers();
   const readinessReports = state.readinessReports
     .map(getComputedReadiness)
     .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
@@ -3870,6 +5437,14 @@ function buildReportsAnalysisContext(selectedDate) {
     .slice(0, 8);
   const hydrationReports = postReports.filter((report) => report.hydration);
   const painReports = [...readinessReports, ...postReports].filter((report) => report.painArea && report.painArea !== NO_PAIN);
+  const readinessToday = readinessReports.filter((report) => report.date === selectedDate);
+  const postToday = postReports.filter((report) => report.date === selectedDate);
+  const readinessIds = new Set(readinessToday.map((report) => report.playerId));
+  const postIds = new Set(postToday.map((report) => report.playerId));
+  const missingPre = activePlayers.filter((player) => !readinessIds.has(player.id));
+  const missingPost = activePlayers.filter((player) => !postIds.has(player.id));
+  const gpsToday = getDashboardGpsRecordsForDate(selectedDate);
+  const smartAlerts = buildSmartAlertsForDate(activePlayers, selectedDate, readinessToday, postToday, gpsToday, missingPre, missingPost);
   const averages = {
     readiness: average(readinessReports.slice(0, 40).map((report) => report.readinessScore)),
     sleep: average(readinessReports.slice(0, 40).map((report) => report.sleepHours)),
@@ -3895,7 +5470,35 @@ function buildReportsAnalysisContext(selectedDate) {
     }
   };
   const mainInsight = buildReportsMainInsight(trends, averages);
-  return { selectedDate, readinessReports, postReports, dailySeries, weekRows, hydrationReports, painReports, averages, trends, mainInsight };
+  return { selectedDate, activePlayers, readinessReports, postReports, readinessToday, postToday, missingPre, missingPost, smartAlerts, dailySeries, weekRows, hydrationReports, painReports, averages, trends, mainInsight };
+}
+
+function renderReportsDecisionStrip(context) {
+  const missingAlerts = [
+    ...context.missingPre.map((player) => smartAlert(player, "חסר דוח מוכנות", "לא מולא דוח מוכנות להיום", "Low", "להזכיר מילוי לפני תחילת פעילות.", "/coach/reports")),
+    ...context.missingPost.map((player) => smartAlert(player, "חסר דוח RPE", "לא מולא דוח RPE להיום", "Low", "להשלים דוח אחרי פעילות.", "/coach/reports"))
+  ];
+  const alerts = sortSmartAlerts([...context.smartAlerts, ...missingAlerts]).slice(0, 5);
+  return `
+    <section class="section decision-priority-panel">
+      <div class="section-title compact-title">
+        <h3>מה דורש פעולה בדוחות?</h3>
+        <span>${alerts.length ? `${alerts.length} פריטים מרכזיים` : "אין פעולה מיידית"}</span>
+      </div>
+      ${alerts.length ? `
+        <div class="decision-alert-grid">
+          ${alerts.map((alert) => `
+            <a class="decision-alert-card ${escapeAttr(alert.severity.toLowerCase())}" href="${escapeAttr(alert.href || "/coach/reports")}" data-route>
+              <span class="severity-badge ${escapeAttr(alert.severity.toLowerCase())}">${escapeHtml(severityLabel(alert.severity))}</span>
+              <strong>${escapeHtml(alert.player ? `${alert.player.name} · ${alert.title}` : alert.title)}</strong>
+              <p>${escapeHtml(alert.reason)}</p>
+              <small>${escapeHtml(alert.action)}</small>
+            </a>
+          `).join("")}
+        </div>
+      ` : `<div class="surface empty compact-empty">כל הדוחות המרכזיים תקינים להיום.</div>`}
+    </section>
+  `;
 }
 
 function buildReportsDailySeries(anchorDate, days) {
@@ -4030,6 +5633,7 @@ function renderPlayerProfile(playerId, activeTab = "readiness") {
 
   const html = coachShell("players", `
     ${renderCoachPlayerProfileHero(context)}
+    ${renderCoachPlayerTimeline(context)}
     ${renderCoachPlayerProfileTabs(context)}
     ${renderCoachPlayerProfileTabContent(context)}
   `);
@@ -4130,6 +5734,133 @@ function renderCoachPlayerProfileHero(context) {
       <a href="/coach/players" data-route class="btn secondary">חזרה לשחקנים</a>
     </section>
   `;
+}
+
+function renderCoachPlayerTimeline(context) {
+  const events = buildCoachPlayerTimelineEvents(context).slice(0, 9);
+  return `
+    <section class="section player-timeline-section">
+      <div class="section-title">
+        <h3>ציר זמן שחקן</h3>
+        <span>${events.length ? "האירועים האחרונים" : "אין אירועים להצגה"}</span>
+      </div>
+      ${events.length ? `
+        <div class="player-timeline">
+          ${events.map((event) => `
+            <article class="timeline-event ${escapeAttr(event.tone)}">
+              <time>${escapeHtml(formatShortDate(event.date))}</time>
+              <div>
+                <span>${escapeHtml(event.type)}</span>
+                <strong>${escapeHtml(event.title)}</strong>
+                <p>${escapeHtml(event.detail)}</p>
+              </div>
+            </article>
+          `).join("")}
+        </div>
+      ` : `<div class="surface empty compact-empty">אין מספיק נתונים לציר זמן.</div>`}
+    </section>
+  `;
+}
+
+function buildCoachPlayerTimelineEvents(context) {
+  const events = [];
+  getFullPeriodPreferred(context.gpsRecords).forEach((record) => {
+    const gpsScore = loadValueToScore(record.gpsLoad);
+    const activityType = formatGpsSessionType(record.sessionType || "");
+    events.push({
+      date: record.date,
+      type: activityType,
+      title: record.sessionName || "פעילות GPS",
+      detail: `GPS Load ${gpsScore}/5 · ${formatGpsReviewMetric("totalDistance", record.totalDistance)} · HSR ${formatGpsReviewMetric("highSpeedRunning", record.highSpeedRunning)}`,
+      tone: record.riskFlags.length ? "red" : gpsScore >= 4 ? "yellow" : "green"
+    });
+    record.riskFlags.slice(0, 2).forEach((flag) => {
+      events.push({
+        date: record.date,
+        type: "התראת GPS",
+        title: "דורש בדיקה",
+        detail: flag,
+        tone: "red"
+      });
+    });
+  });
+  context.postReports.forEach((report) => {
+    events.push({
+      date: report.date,
+      type: "דוח RPE",
+      title: `${report.sessionType} · RPE ${report.rpe}`,
+      detail: `עומס ${formatInteger(report.trainingLoad)} · עייפות ${report.fatigue}/5${report.comments ? ` · ${report.comments}` : ""}`,
+      tone: report.riskFlags.length ? "yellow" : "green"
+    });
+    if (report.painArea && report.painArea !== NO_PAIN) {
+      events.push({
+        date: report.date,
+        type: "דיווח כאב",
+        title: report.painArea,
+        detail: report.painIntensity ? `עוצמה ${report.painIntensity}/10` : "דווח בדוח RPE",
+        tone: "yellow"
+      });
+    }
+    if (report.hydration && report.hydration.tone !== "green") {
+      events.push({
+        date: report.date,
+        type: "הידרציה",
+        title: report.hydration.status,
+        detail: `איבוד נוזלים ${formatNumber(report.hydration.lossPercent)}% · ${formatNumber(report.hydration.lossKg)} ק״ג`,
+        tone: report.hydration.tone
+      });
+    }
+  });
+  context.readinessReports.forEach((report) => {
+    const status = getReadinessStatus(report.readinessScore);
+    events.push({
+      date: report.date,
+      type: "מוכנות",
+      title: status.label,
+      detail: `שינה ${formatNumber(report.sleepHours)} שעות · אנרגיה ${report.energy}/5 · כאבי שריר ${report.soreness}/5`,
+      tone: status.tone
+    });
+    if (report.painArea && report.painArea !== NO_PAIN) {
+      events.push({
+        date: report.date,
+        type: "דיווח כאב",
+        title: report.painArea,
+        detail: `${report.painSide || "צד לא צוין"}${report.painIntensity ? ` · עוצמה ${report.painIntensity}/10` : ""}`,
+        tone: report.painIntensity && report.painIntensity >= 7 ? "red" : "yellow"
+      });
+    }
+    if (report.sleepHours && report.sleepHours < state.settings.sleepHoursLow) {
+      events.push({
+        date: report.date,
+        type: "שינה",
+        title: "שינה נמוכה",
+        detail: `${formatNumber(report.sleepHours)} שעות · איכות ${report.sleepQuality}/5`,
+        tone: "yellow"
+      });
+    }
+  });
+  const readinessDates = new Set(context.readinessReports.map((report) => report.date));
+  const rpeDates = new Set(context.postReports.map((report) => report.date));
+  unique(state.sessions.filter((sessionItem) => sessionItem.date <= todayIso()).map((sessionItem) => sessionItem.date))
+    .filter((date) => !readinessDates.has(date) || !rpeDates.has(date))
+    .slice(-4)
+    .forEach((date) => {
+      const missing = [!readinessDates.has(date) ? "מוכנות" : "", !rpeDates.has(date) ? "RPE" : ""].filter(Boolean);
+      events.push({
+        date,
+        type: "דוח חסר",
+        title: `חסר דוח ${missing.join(" ו-")}`,
+        detail: "נדרשת השלמה כדי לשמור על רצף המעקב.",
+        tone: "yellow"
+      });
+    });
+  return events.sort((a, b) => b.date.localeCompare(a.date) || getTimelineToneRank(a.tone) - getTimelineToneRank(b.tone));
+}
+
+function getTimelineToneRank(tone) {
+  if (tone === "red") return 0;
+  if (tone === "yellow") return 1;
+  return 2;
 }
 
 function renderCoachPlayerProfileTabs(context) {
@@ -5341,6 +7072,7 @@ function getDateRangeList(start, end) {
 
 function renderGpsPage() {
   const filters = uiState.gpsFilters;
+  initializeGpsSessionFilter(filters);
   const metric = filters.metric || "totalDistance";
   const records = getFilteredGpsRecords();
   const allRecords = state.gpsRecords.map(getComputedGpsRecord);
@@ -5354,7 +7086,7 @@ function renderGpsPage() {
         <h2>GPS</h2>
         <p>ייבוא, ניתוח והשוואת עומס חיצוני מול דוחות RPE ומוכנות</p>
       </div>
-      <button class="btn primary" id="openGpsImport" type="button">ייבוא דוח GPS</button>
+      ${canWriteOperationalData() ? `<button class="btn primary" id="openGpsImport" type="button">ייבוא דוח GPS</button>` : `<span class="badge neutral">צפייה בלבד</span>`}
     </div>
 
     ${uiState.gpsImportModalOpen ? renderGpsImportModal() : ""}
@@ -5373,6 +7105,16 @@ function renderGpsPage() {
   `);
 
   mount(html, bindGpsPage);
+}
+
+function initializeGpsSessionFilter(filters) {
+  if (filters.initializedSession) return;
+  filters.initializedSession = true;
+  const sessionIds = new Set(state.gpsRecords.map((record) => record.gpsSessionId));
+  const latestCompleted = state.gpsSessions
+    .filter((sessionItem) => sessionItem.date <= todayIso() && sessionIds.has(sessionItem.id))
+    .sort((a, b) => b.date.localeCompare(a.date))[0];
+  if (latestCompleted) filters.sessionId = latestCompleted.id;
 }
 
 function bindGpsPage() {
@@ -5832,6 +7574,7 @@ function getComputedGpsRecord(record) {
   const computed = {
     ...record,
     playerName: player ? player.name : record.playerName,
+    position: normalizePlayerPosition(record.position || player?.position || ""),
     date: sessionItem ? sessionItem.date : "",
     sessionName: sessionItem ? sessionItem.sessionName : "",
     sessionType: sessionItem ? sessionItem.type : "",
@@ -5901,6 +7644,7 @@ function renderGpsSessionReviewDashboard(records, selectedSession, filters) {
   return `
     <section class="section gps-review-dashboard">
       ${renderGpsSessionSummaryHeader(enrichedRecords, selectedSession, filters)}
+      ${renderGpsDecisionCenter(enrichedRecords, selectedMetric)}
       <article class="surface gps-main-chart-card">
         <div class="gps-main-chart-header">
           <div>
@@ -5994,6 +7738,99 @@ function gpsSummaryMetric(label, value) {
       <strong>${escapeHtml(value)}</strong>
     </div>
   `;
+}
+
+function renderGpsDecisionCenter(records, metric) {
+  const rows = buildGpsBenchmarkRows(records, metric.key);
+  if (!rows.length) {
+    return `<section class="surface gps-decision-center empty">אין נתוני GPS להשוואה במדד הנבחר</section>`;
+  }
+  const actionRows = rows
+    .map((row) => ({ row, priority: getGpsBenchmarkPriority(row) }))
+    .filter((item) => item.priority.score > 0)
+    .sort((a, b) => b.priority.score - a.priority.score)
+    .slice(0, 3);
+  return `
+    <section class="surface gps-decision-center">
+      <div class="gps-decision-head">
+        <div>
+          <span class="eyebrow">Decision Center</span>
+          <h3>מה המדד ${escapeHtml(metric.label)} אומר?</h3>
+          <p>השוואה מהירה מול קבוצה, עמדה, שיא אישי ומשחק קודם. הגרף למטה מיועד לניתוח אחרי הסריקה הראשונית.</p>
+        </div>
+        <span class="badge neutral">${escapeHtml(rows.length)} שחקנים</span>
+      </div>
+      ${actionRows.length ? `
+        <div class="gps-decision-actions">
+          ${actionRows.map(({ row, priority }) => `
+            <a href="/coach/player/${escapeAttr(row.record.playerId)}/gps" data-route class="decision-alert-card ${escapeAttr(priority.severity.toLowerCase())}">
+              <span class="severity-badge ${escapeAttr(priority.severity.toLowerCase())}">${escapeHtml(severityLabel(priority.severity))}</span>
+              <strong>${escapeHtml(row.record.playerName)} · ${escapeHtml(priority.title)}</strong>
+              <p>${escapeHtml(priority.reason)}</p>
+              <small>בדוק עומס, דקות ותפקיד לפני החלטת עומס נוספת.</small>
+            </a>
+          `).join("")}
+        </div>
+      ` : `<div class="surface empty compact-empty">אין חריגה משמעותית במדד הנבחר.</div>`}
+      <div class="gps-benchmark-grid">
+        ${rows.map((row) => renderGpsBenchmarkCard(row, metric)).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderGpsBenchmarkCard(row, metric) {
+  return `
+    <article class="gps-benchmark-card">
+      <header>
+        <div>
+          <strong>${escapeHtml(row.record.playerName)}</strong>
+          <span>${escapeHtml(row.position)}</span>
+        </div>
+        <b>${escapeHtml(formatGpsReviewMetric(metric.key, row.currentValue))}</b>
+      </header>
+      <div class="gps-benchmark-mini-grid">
+        ${renderGpsBenchmarkItem(metric.key, "ממוצע קבוצה", row.team.value, formatGpsBenchmarkDiff(metric.key, row.team), row.team)}
+        ${renderGpsBenchmarkItem(metric.key, "ממוצע עמדה", row.positionAverage.value, formatGpsBenchmarkDiff(metric.key, row.positionAverage), row.positionAverage)}
+        ${renderGpsBenchmarkItem(metric.key, "שיא אישי", row.personalBest ? row.personalBest.value : null, formatGpsPersonalBestShare(row), null)}
+        ${renderGpsBenchmarkItem(metric.key, "משחק קודם", row.previousMatch ? row.previousMatch.value : null, row.previousMatch ? formatGpsBenchmarkDiff(metric.key, row.previousMatch) : "אין נתון", row.previousMatch)}
+      </div>
+    </article>
+  `;
+}
+
+function renderGpsBenchmarkItem(metricKey, label, value, detail, comparison) {
+  const tone = comparison ? getGpsBenchmarkTone(comparison) : "neutral";
+  return `
+    <div class="gps-benchmark-item ${escapeAttr(tone)}">
+      <span>${escapeHtml(label)}</span>
+      <strong>${value === null || value === undefined ? "אין נתון" : escapeHtml(formatGpsReviewMetric(metricKey, value))}</strong>
+      <small>${escapeHtml(detail || "אין נתון")}</small>
+    </div>
+  `;
+}
+
+function getGpsBenchmarkTone(comparison) {
+  if (!comparison || comparison.percent === null || comparison.percent === undefined) return "neutral";
+  if (comparison.percent >= 10) return "above";
+  if (comparison.percent <= -10) return "below";
+  return "near";
+}
+
+function getGpsBenchmarkPriority(row) {
+  const teamPercent = row.team.percent || 0;
+  const positionPercent = row.positionAverage.percent || 0;
+  const personalPercent = row.personalBest ? row.personalBest.percent : 100;
+  if (teamPercent >= 25 || positionPercent >= 25) {
+    return { score: 90 + Math.max(teamPercent, positionPercent), severity: "High", title: "גבוה ביחס לבנצ׳מרק", reason: `${formatNumber(Math.max(teamPercent, positionPercent))}% מעל ממוצע רלוונטי` };
+  }
+  if (teamPercent <= -20 || positionPercent <= -20) {
+    return { score: 60 + Math.abs(Math.min(teamPercent, positionPercent)), severity: "Medium", title: "נמוך ביחס לבנצ׳מרק", reason: `${formatNumber(Math.abs(Math.min(teamPercent, positionPercent)))}% מתחת לממוצע רלוונטי` };
+  }
+  if (personalPercent >= 95) {
+    return { score: 50 + personalPercent, severity: "Medium", title: "קרוב לשיא אישי", reason: `${formatNumber(personalPercent)}% מהשיא האישי` };
+  }
+  return { score: 0, severity: "Low", title: "תקין", reason: "אין חריגה משמעותית" };
 }
 
 function renderGpsMetricSelector(selectedKey) {
@@ -6171,6 +8008,75 @@ function getGpsReviewMetricUnit(metric) {
   if (metric === "minutesPlayed") return "דקות";
   if (["sprintCount", "accelerations", "decelerations"].includes(metric)) return "כמות";
   return "";
+}
+
+function buildGpsBenchmarkRows(records, metricKey, allRecords = state.gpsRecords.map(getComputedGpsRecord)) {
+  const currentRecords = getFullPeriodPreferred(records)
+    .filter((record) => Number.isFinite(Number(record[metricKey])))
+    .map((record) => ({ ...record, position: normalizePlayerPosition(record.position || getPlayerPrimaryPosition(record.playerId)) }));
+  const allPreferred = getFullPeriodPreferred(allRecords)
+    .filter((record) => Number.isFinite(Number(record[metricKey])))
+    .map((record) => ({ ...record, position: normalizePlayerPosition(record.position || getPlayerPrimaryPosition(record.playerId)) }));
+  const teamAverage = average(currentRecords.map((record) => record[metricKey])) || 0;
+
+  return currentRecords
+    .map((record) => {
+      const currentValue = Number(record[metricKey]) || 0;
+      const positionRecords = currentRecords.filter((item) => item.position && item.position === record.position);
+      const positionAverage = average(positionRecords.map((item) => item[metricKey])) || 0;
+      const playerHistory = allPreferred.filter((item) => item.playerId === record.playerId);
+      const personalBest = Math.max(0, ...playerHistory.map((item) => Number(item[metricKey]) || 0));
+      const previousMatch = getPreviousGpsMatchRecord(record, metricKey, allPreferred);
+      return {
+        record,
+        player: getPlayer(record.playerId),
+        position: record.position || "עמדה לא מוגדרת",
+        currentValue,
+        team: compareGpsMetricValue(currentValue, teamAverage),
+        positionAverage: compareGpsMetricValue(currentValue, positionAverage),
+        personalBest: personalBest ? {
+          value: personalBest,
+          percent: personalBest ? (currentValue / personalBest) * 100 : null
+        } : null,
+        previousMatch: previousMatch ? compareGpsMetricValue(currentValue, Number(previousMatch[metricKey]) || 0) : null
+      };
+    })
+    .sort((a, b) => b.currentValue - a.currentValue);
+}
+
+function compareGpsMetricValue(currentValue, benchmarkValue) {
+  const current = Number(currentValue) || 0;
+  const benchmark = Number(benchmarkValue) || 0;
+  const difference = current - benchmark;
+  return {
+    value: benchmark,
+    difference,
+    percent: benchmark ? (difference / benchmark) * 100 : null
+  };
+}
+
+function getPreviousGpsMatchRecord(record, metricKey, allRecords) {
+  return allRecords
+    .filter((item) => item.playerId === record.playerId && item.date < record.date && isGpsMatchRecord(item) && Number.isFinite(Number(item[metricKey])))
+    .sort((a, b) => b.date.localeCompare(a.date))[0] || null;
+}
+
+function isGpsMatchRecord(record) {
+  const sessionItem = state.gpsSessions.find((item) => item.id === record.gpsSessionId) || null;
+  const type = sessionItem ? sessionItem.activityType || sessionItem.type : record.sessionType;
+  return type === "match" || type === "training_match" || type === "משחק" || type === "משחק אימון";
+}
+
+function formatGpsBenchmarkDiff(metricKey, comparison) {
+  if (!comparison || comparison.percent === null || comparison.percent === undefined) return "אין נתון";
+  const sign = comparison.difference > 0 ? "+" : comparison.difference < 0 ? "-" : "";
+  const direction = comparison.difference > 0 ? "מעל" : comparison.difference < 0 ? "מתחת" : "זהה";
+  return `${sign}${formatGpsReviewMetric(metricKey, Math.abs(comparison.difference))} · ${formatNumber(Math.abs(comparison.percent))}% ${direction}`;
+}
+
+function formatGpsPersonalBestShare(row) {
+  if (!row.personalBest) return "אין נתון";
+  return `${formatNumber(row.personalBest.percent)}% מהשיא`;
 }
 
 function getGpsAlertGroups(records) {
@@ -6614,7 +8520,469 @@ function normalizeGpsPeriod(value) {
   return "משחק מלא";
 }
 
+function renderOwnerAdminPage() {
+  if (!canManageSystem()) {
+    renderAccessDenied();
+    return;
+  }
+  if (!uiState.ownerAdmin.loading && !uiState.ownerAdmin.teams.length && !uiState.ownerAdmin.error) {
+    loadOwnerAdminSnapshot();
+  }
+  const tab = OWNER_ADMIN_TABS.includes(uiState.ownerAdmin.tab) ? uiState.ownerAdmin.tab : "teams";
+  const html = coachShell("admin", `
+    <div class="page-header premium-header owner-admin-header">
+      <div>
+        <span class="eyebrow">Owner</span>
+        <h2>ניהול מערכת</h2>
+        <p>ניהול קבוצות, מאמנים, שחקנים והרשאות מכלי אחד מאובטח.</p>
+      </div>
+      <button class="btn secondary" type="button" id="refreshOwnerAdmin">רענון נתונים</button>
+    </div>
+    ${uiState.ownerAdmin.notice ? `<div class="success-box show">${escapeHtml(uiState.ownerAdmin.notice)}</div>` : ""}
+    ${uiState.ownerAdmin.error ? `<div class="success-box danger-box show">${escapeHtml(uiState.ownerAdmin.error)}</div>` : ""}
+    <section class="surface owner-admin-tabs" role="tablist" aria-label="ניהול מערכת">
+      ${ownerAdminTabButton("teams", "קבוצות", tab)}
+      ${ownerAdminTabButton("coaches", "מאמנים", tab)}
+      ${ownerAdminTabButton("players", "שחקנים", tab)}
+      ${ownerAdminTabButton("permissions", "הרשאות", tab)}
+    </section>
+    ${uiState.ownerAdmin.loading ? `<section class="surface empty">טוען נתוני ניהול מערכת...</section>` : renderOwnerAdminTab(tab)}
+  `);
+  mount(html, bindOwnerAdminPage);
+}
+
+function ownerAdminTabButton(id, label, activeTab) {
+  return `<button type="button" class="${activeTab === id ? "is-active" : ""}" data-owner-admin-tab="${escapeAttr(id)}">${escapeHtml(label)}</button>`;
+}
+
+function renderOwnerAdminTab(tab) {
+  if (tab === "coaches") return renderOwnerCoachesTab();
+  if (tab === "players") return renderOwnerPlayersTab();
+  if (tab === "permissions") return renderOwnerPermissionsTab();
+  return renderOwnerTeamsTab();
+}
+
+async function loadOwnerAdminSnapshot() {
+  uiState.ownerAdmin.loading = true;
+  uiState.ownerAdmin.error = "";
+  renderOwnerAdminPage();
+  try {
+    const [teams, coaches, players, owners] = await Promise.all([
+      supabaseSelect("teams", "select=*&order=name.asc"),
+      supabaseSelect("coaches", "select=*&order=email.asc"),
+      supabaseSelect("players", "select=*&order=name.asc"),
+      supabaseSelect("platform_owners", "select=*&order=email.asc")
+    ]);
+    uiState.ownerAdmin = { ...uiState.ownerAdmin, loading: false, error: "", teams, coaches, players, owners };
+  } catch (error) {
+    console.error("[Owner Admin] failed to load", error);
+    uiState.ownerAdmin.loading = false;
+    uiState.ownerAdmin.error = error.message || "טעינת ניהול מערכת נכשלה.";
+  }
+  renderOwnerAdminPage();
+}
+
+function getOwnerAdminTeam(teamId) {
+  return uiState.ownerAdmin.teams.find((team) => team.id === teamId) || null;
+}
+
+function renderOwnerTeamsTab() {
+  const { teams, players, coaches } = uiState.ownerAdmin;
+  return `
+    <section class="owner-admin-grid">
+      <article class="surface owner-admin-panel">
+        <div class="section-title">
+          <h3>יצירת קבוצה</h3>
+          <span>Team code משמש גם לכניסת שחקנים</span>
+        </div>
+        <form id="ownerCreateTeamForm" class="grid three">
+          <input name="teamName" required placeholder="שם קבוצה" />
+          <input name="teamSlug" required placeholder="קוד קבוצה / slug" dir="ltr" />
+          <button class="btn primary" type="submit">צור קבוצה</button>
+        </form>
+      </article>
+      <article class="surface owner-admin-panel wide">
+        <div class="section-title"><h3>קבוצות</h3><span>${teams.length} קבוצות</span></div>
+        <div class="owner-admin-list">
+          ${teams.map((team) => {
+            const playerCount = players.filter((player) => player.team_id === team.id).length;
+            const coachCount = unique(coaches.filter((coach) => coach.team_id === team.id).map((coach) => coach.user_id || coach.email)).length;
+            return `
+              <div class="owner-admin-row team-row">
+                <input data-team-name="${escapeAttr(team.id)}" value="${escapeAttr(team.name)}" aria-label="שם קבוצה" />
+                <input data-team-slug="${escapeAttr(team.id)}" value="${escapeAttr(team.slug)}" aria-label="קוד קבוצה" dir="ltr" />
+                <label class="checkbox-line"><input data-team-active="${escapeAttr(team.id)}" type="checkbox" ${team.active !== false ? "checked" : ""}/> פעילה</label>
+                <span class="mini-stat">${playerCount} שחקנים</span>
+                <span class="mini-stat">${coachCount} מאמנים</span>
+                <button class="btn secondary" type="button" data-save-team="${escapeAttr(team.id)}">שמירה</button>
+              </div>
+            `;
+          }).join("") || `<div class="empty">אין קבוצות להצגה</div>`}
+        </div>
+      </article>
+    </section>
+  `;
+}
+
+function renderOwnerCoachesTab() {
+  const { teams, coaches } = uiState.ownerAdmin;
+  const coachGroups = groupCoachesByUser(coaches);
+  return `
+    <section class="owner-admin-grid">
+      <article class="surface owner-admin-panel">
+        <div class="section-title"><h3>יצירת מאמן</h3><span>נוצר דרך Supabase Auth בצד שרת</span></div>
+        <form id="ownerCreateCoachForm" class="grid">
+          <input name="coachName" required placeholder="שם המאמן" />
+          <input name="coachEmail" required type="email" placeholder="email@example.com" dir="ltr" />
+          <input name="coachPassword" required type="password" minlength="8" placeholder="סיסמה זמנית" />
+          <div class="assignment-picker">
+            ${teams.map((team) => `
+              <label class="assignment-line">
+                <input type="checkbox" name="teamIds" value="${escapeAttr(team.id)}" />
+                <span>${escapeHtml(team.name)}</span>
+                <select name="role-${escapeAttr(team.id)}">${renderRoleOptions("coach")}</select>
+              </label>
+            `).join("")}
+          </div>
+          <button class="btn primary" type="submit">צור משתמש מאמן</button>
+        </form>
+      </article>
+      <article class="surface owner-admin-panel">
+        <div class="section-title"><h3>שיוך מאמן קיים לקבוצה</h3><span>למשתמש Auth שכבר קיים</span></div>
+        <form id="ownerAssignCoachForm" class="grid">
+          <select name="coachUser" required>
+            <option value="">בחר מאמן קיים</option>
+            ${coachGroups.map((coach) => `<option value="${escapeAttr(coach.userId)}">${escapeHtml(coach.name)} · ${escapeHtml(coach.email)}</option>`).join("")}
+          </select>
+          <select name="teamId" required>${renderTeamOptions(teams)}</select>
+          <select name="role">${renderRoleOptions("coach")}</select>
+          <button class="btn secondary" type="submit">הוסף שיוך</button>
+        </form>
+      </article>
+    </section>
+    <section class="surface owner-admin-panel wide">
+      <div class="section-title"><h3>מאמנים והרשאות</h3><span>${coachGroups.length} משתמשי מאמן</span></div>
+      <div class="owner-admin-list">${coachGroups.map((coach) => renderOwnerCoachGroup(coach)).join("") || `<div class="empty">אין מאמנים להצגה</div>`}</div>
+    </section>
+  `;
+}
+
+function groupCoachesByUser(coaches) {
+  const map = new Map();
+  coaches.forEach((coach) => {
+    const key = coach.user_id || coach.email || coach.id;
+    if (!map.has(key)) map.set(key, { userId: coach.user_id || "", name: coach.name || coach.email || "מאמן", email: coach.email || "", assignments: [] });
+    map.get(key).assignments.push(coach);
+  });
+  return Array.from(map.values()).sort((a, b) => a.email.localeCompare(b.email));
+}
+
+function renderOwnerCoachGroup(coach) {
+  return `
+    <div class="owner-coach-card">
+      <div class="owner-coach-head">
+        <div><strong>${escapeHtml(coach.name)}</strong><span dir="ltr">${escapeHtml(coach.email)}</span></div>
+        <form class="reset-password-form" data-reset-coach="${escapeAttr(coach.userId)}">
+          <input name="password" type="password" minlength="8" placeholder="סיסמה זמנית חדשה" />
+          <button class="btn secondary" type="submit">איפוס סיסמה</button>
+        </form>
+      </div>
+      <div class="owner-assignment-list">
+        ${coach.assignments.map((assignment) => {
+          const team = getOwnerAdminTeam(assignment.team_id);
+          return `
+            <div class="owner-admin-row">
+              <span>${escapeHtml(team?.name || assignment.team_id)}</span>
+              <select data-coach-role="${escapeAttr(assignment.id)}">${renderRoleOptions(assignment.role)}</select>
+              <label class="checkbox-line"><input data-coach-active="${escapeAttr(assignment.id)}" type="checkbox" ${assignment.active !== false ? "checked" : ""}/> פעיל</label>
+              <button class="btn secondary" type="button" data-save-coach-assignment="${escapeAttr(assignment.id)}">שמירה</button>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderOwnerPlayersTab() {
+  const { teams, players } = uiState.ownerAdmin;
+  const selectedTeam = uiState.ownerAdmin.teamFilter === "all" ? teams[0]?.id || "" : uiState.ownerAdmin.teamFilter;
+  const visiblePlayers = players.filter((player) => uiState.ownerAdmin.teamFilter === "all" || player.team_id === uiState.ownerAdmin.teamFilter);
+  return `
+    <section class="owner-admin-grid">
+      <article class="surface owner-admin-panel">
+        <div class="section-title"><h3>הוספת שחקן</h3><span>PIN בן 4 ספרות</span></div>
+        <form id="ownerCreatePlayerForm" class="grid">
+          <select name="teamId" required>${renderTeamOptions(teams, selectedTeam)}</select>
+          <input name="playerName" required placeholder="שם שחקן" />
+          <select name="playerPosition">${renderPositionOptions("", true)}</select>
+          <input name="playerPin" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" required placeholder="PIN" />
+          <button class="btn primary" type="submit">הוסף שחקן</button>
+        </form>
+      </article>
+      <article class="surface owner-admin-panel wide">
+        <div class="section-title">
+          <h3>שחקנים</h3>
+          <select id="ownerPlayerTeamFilter" aria-label="סינון לפי קבוצה">
+            <option value="all" ${uiState.ownerAdmin.teamFilter === "all" ? "selected" : ""}>כל הקבוצות</option>
+            ${teams.map((team) => `<option value="${escapeAttr(team.id)}" ${uiState.ownerAdmin.teamFilter === team.id ? "selected" : ""}>${escapeHtml(team.name)}</option>`).join("")}
+          </select>
+        </div>
+        <div class="owner-admin-list">
+          ${visiblePlayers.map((player) => {
+            const key = `${player.team_id}::${player.id}`;
+            return `
+              <div class="owner-admin-row player-row">
+                <span>${escapeHtml(getOwnerAdminTeam(player.team_id)?.name || "קבוצה")}</span>
+                <input data-owner-player-name="${escapeAttr(key)}" value="${escapeAttr(player.name)}" />
+                <select data-owner-player-position="${escapeAttr(key)}">${renderPositionOptions(player.position || "", true)}</select>
+                <input data-owner-player-pin="${escapeAttr(key)}" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" value="${escapeAttr(player.pin_code || "")}" aria-label="PIN" />
+                <label class="checkbox-line"><input data-owner-player-active="${escapeAttr(key)}" type="checkbox" ${player.active !== false ? "checked" : ""}/> פעיל</label>
+                <button class="btn secondary" type="button" data-save-owner-player="${escapeAttr(key)}">שמירה</button>
+              </div>
+            `;
+          }).join("") || `<div class="empty">אין שחקנים להצגה</div>`}
+        </div>
+      </article>
+    </section>
+  `;
+}
+
+function renderOwnerPermissionsTab() {
+  return `
+    <section class="owner-admin-grid">
+      <article class="surface owner-admin-panel wide">
+        <div class="section-title"><h3>מודל הרשאות</h3><span>Action first, data scoped by team</span></div>
+        <div class="permission-grid">
+          ${permissionCard("Owner", "גישה מלאה לכל הקבוצות, יצירת קבוצות, מאמנים ושחקנים, ניהול הרשאות.", "green")}
+          ${permissionCard("Team Admin", "ניהול הקבוצה המשויכת: שחקנים, PINים, הגדרות ודוחות.", "blue")}
+          ${permissionCard("Coach", "צפייה בנתוני קבוצה, דוחות, GPS והעלאת נתוני GPS.", "yellow")}
+          ${permissionCard("Viewer", "צפייה בלבד. אין שמירה או עריכה.", "neutral")}
+        </div>
+      </article>
+      <article class="surface owner-admin-panel wide">
+        <div class="section-title"><h3>בעלי מערכת</h3><span>${uiState.ownerAdmin.owners.length} Owners</span></div>
+        <div class="owner-admin-list">
+          ${uiState.ownerAdmin.owners.map((owner) => `
+            <div class="owner-admin-row">
+              <strong>${escapeHtml(owner.name || "Owner")}</strong>
+              <span dir="ltr">${escapeHtml(owner.email || "")}</span>
+              <span class="badge ${owner.active !== false ? "green" : "neutral"}">${owner.active !== false ? "פעיל" : "לא פעיל"}</span>
+            </div>
+          `).join("") || `<div class="empty">אין Owners להצגה</div>`}
+        </div>
+        <p class="muted-text">יצירת Owner חדש דורשת יצירת Supabase Auth user ואז הוספה ל-platform_owners דרך SQL מאובטח.</p>
+      </article>
+    </section>
+  `;
+}
+
+function permissionCard(title, body, tone) {
+  return `<div class="permission-card ${escapeAttr(tone)}"><strong>${escapeHtml(title)}</strong><p>${escapeHtml(body)}</p></div>`;
+}
+
+function renderRoleOptions(selectedRole) {
+  return TEAM_ROLES.map((role) => `<option value="${escapeAttr(role)}" ${selectedRole === role ? "selected" : ""}>${escapeHtml(getRoleLabel(role))}</option>`).join("");
+}
+
+function renderTeamOptions(teams, selected = "") {
+  return teams.map((team) => `<option value="${escapeAttr(team.id)}" ${selected === team.id ? "selected" : ""}>${escapeHtml(team.name)}</option>`).join("");
+}
+
+function bindOwnerAdminPage() {
+  document.getElementById("refreshOwnerAdmin")?.addEventListener("click", () => {
+    uiState.ownerAdmin.notice = "";
+    loadOwnerAdminSnapshot();
+  });
+  document.querySelectorAll("[data-owner-admin-tab]").forEach((button) => {
+    button.addEventListener("click", () => {
+      uiState.ownerAdmin.tab = button.getAttribute("data-owner-admin-tab") || "teams";
+      uiState.ownerAdmin.notice = "";
+      renderOwnerAdminPage();
+    });
+  });
+  bindOwnerTeamForms();
+  bindOwnerCoachForms();
+  bindOwnerPlayerForms();
+}
+
+function setOwnerAdminNotice(message) {
+  uiState.ownerAdmin.notice = message;
+  uiState.ownerAdmin.error = "";
+}
+
+function setOwnerAdminError(error) {
+  uiState.ownerAdmin.error = error.message || String(error || "שגיאה בניהול מערכת");
+  uiState.ownerAdmin.notice = "";
+}
+
+function bindOwnerTeamForms() {
+  document.getElementById("ownerCreateTeamForm")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    try {
+      const teamRows = await supabaseInsert("teams", {
+        name: String(data.get("teamName") || "").trim(),
+        slug: String(data.get("teamSlug") || "").trim(),
+        active: true
+      });
+      const team = Array.isArray(teamRows) ? teamRows[0] : null;
+      if (team?.id) {
+        await supabaseUpsert("settings", [{ ...toSupabaseSettings(DEFAULT_SETTINGS), team_id: team.id }], "team_id");
+        await supabaseUpsert("pain_areas", DEFAULT_PAIN_AREAS.map((name, index) => ({ team_id: team.id, name, sort_order: index, active: true })), "team_id,name");
+      }
+      setOwnerAdminNotice("הקבוצה נוצרה בהצלחה.");
+      await loadOwnerAdminSnapshot();
+    } catch (error) {
+      setOwnerAdminError(error);
+      renderOwnerAdminPage();
+    }
+  });
+  document.querySelectorAll("[data-save-team]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const teamId = button.getAttribute("data-save-team");
+      try {
+        await supabasePatch("teams", `id=eq.${encodeURIComponent(teamId)}`, {
+          name: document.querySelector(`[data-team-name="${cssEscape(teamId)}"]`)?.value || "",
+          slug: document.querySelector(`[data-team-slug="${cssEscape(teamId)}"]`)?.value || "",
+          active: Boolean(document.querySelector(`[data-team-active="${cssEscape(teamId)}"]`)?.checked)
+        });
+        setOwnerAdminNotice("פרטי הקבוצה נשמרו.");
+        await loadOwnerAdminSnapshot();
+      } catch (error) {
+        setOwnerAdminError(error);
+        renderOwnerAdminPage();
+      }
+    });
+  });
+}
+
+function bindOwnerCoachForms() {
+  document.getElementById("ownerCreateCoachForm")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const assignments = Array.from(form.querySelectorAll('input[name="teamIds"]:checked')).map((input) => ({
+      teamId: input.value,
+      role: form.querySelector(`select[name="role-${input.value}"]`)?.value || "coach"
+    }));
+    try {
+      await ownerAdminApi("createCoach", {
+        name: String(data.get("coachName") || "").trim(),
+        email: String(data.get("coachEmail") || "").trim(),
+        password: String(data.get("coachPassword") || ""),
+        assignments
+      });
+      setOwnerAdminNotice("משתמש המאמן נוצר ושויך לקבוצות.");
+      await loadOwnerAdminSnapshot();
+    } catch (error) {
+      setOwnerAdminError(error);
+      renderOwnerAdminPage();
+    }
+  });
+  document.getElementById("ownerAssignCoachForm")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const coach = groupCoachesByUser(uiState.ownerAdmin.coaches).find((item) => item.userId === data.get("coachUser"));
+    if (!coach) return;
+    try {
+      await supabaseUpsert("coaches", [{
+        team_id: String(data.get("teamId")),
+        user_id: coach.userId,
+        name: coach.name,
+        email: coach.email,
+        role: String(data.get("role") || "coach"),
+        active: true
+      }], "team_id,user_id");
+      setOwnerAdminNotice("השיוך נוסף.");
+      await loadOwnerAdminSnapshot();
+    } catch (error) {
+      setOwnerAdminError(error);
+      renderOwnerAdminPage();
+    }
+  });
+  document.querySelectorAll("[data-save-coach-assignment]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const coachId = button.getAttribute("data-save-coach-assignment");
+      try {
+        await supabasePatch("coaches", `id=eq.${encodeURIComponent(coachId)}`, {
+          role: document.querySelector(`[data-coach-role="${cssEscape(coachId)}"]`)?.value || "coach",
+          active: Boolean(document.querySelector(`[data-coach-active="${cssEscape(coachId)}"]`)?.checked)
+        });
+        setOwnerAdminNotice("הרשאת המאמן נשמרה.");
+        await loadOwnerAdminSnapshot();
+      } catch (error) {
+        setOwnerAdminError(error);
+        renderOwnerAdminPage();
+      }
+    });
+  });
+  document.querySelectorAll("[data-reset-coach]").forEach((form) => {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const userId = form.getAttribute("data-reset-coach");
+      const password = new FormData(form).get("password");
+      try {
+        await ownerAdminApi("resetCoachPassword", { userId, password });
+        setOwnerAdminNotice("הסיסמה אופסה בהצלחה.");
+        await loadOwnerAdminSnapshot();
+      } catch (error) {
+        setOwnerAdminError(error);
+        renderOwnerAdminPage();
+      }
+    });
+  });
+}
+
+function bindOwnerPlayerForms() {
+  document.getElementById("ownerPlayerTeamFilter")?.addEventListener("change", (event) => {
+    uiState.ownerAdmin.teamFilter = event.currentTarget.value || "all";
+    renderOwnerAdminPage();
+  });
+  document.getElementById("ownerCreatePlayerForm")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    try {
+      await supabaseUpsert("players", [{
+        team_id: String(data.get("teamId")),
+        id: createId("player"),
+        name: String(data.get("playerName") || "").trim(),
+        active: true,
+        position: normalizePlayerPosition(data.get("playerPosition")),
+        pin_code: normalizePin(data.get("playerPin"))
+      }], "team_id,id");
+      setOwnerAdminNotice("השחקן נוסף לקבוצה.");
+      await loadOwnerAdminSnapshot();
+    } catch (error) {
+      setOwnerAdminError(error);
+      renderOwnerAdminPage();
+    }
+  });
+  document.querySelectorAll("[data-save-owner-player]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const key = button.getAttribute("data-save-owner-player");
+      const [teamId, playerId] = key.split("::");
+      try {
+        await supabasePatch("players", `team_id=eq.${encodeURIComponent(teamId)}&id=eq.${encodeURIComponent(playerId)}`, {
+          name: document.querySelector(`[data-owner-player-name="${cssEscape(key)}"]`)?.value || "",
+          position: normalizePlayerPosition(document.querySelector(`[data-owner-player-position="${cssEscape(key)}"]`)?.value || ""),
+          pin_code: normalizePin(document.querySelector(`[data-owner-player-pin="${cssEscape(key)}"]`)?.value || ""),
+          active: Boolean(document.querySelector(`[data-owner-player-active="${cssEscape(key)}"]`)?.checked)
+        });
+        setOwnerAdminNotice("פרטי השחקן נשמרו.");
+        await loadOwnerAdminSnapshot();
+      } catch (error) {
+        setOwnerAdminError(error);
+        renderOwnerAdminPage();
+      }
+    });
+  });
+}
+
 function renderSettingsPage() {
+  const demoCounts = getDemoDatasetCounts(state);
+  const demoAnchorDate = getDemoDatasetAnchorDate(state);
+  const canManage = canManageCurrentTeam();
   const html = coachShell("settings", `
     <div class="page-header premium-header">
       <div>
@@ -6622,8 +8990,24 @@ function renderSettingsPage() {
         <h2>הגדרות</h2>
         <p>שחקנים, PIN אישי, אזורי כאב וספי התראה</p>
       </div>
-      <button class="btn danger" type="button" id="resetDemo">איפוס נתוני דמו</button>
+      ${canManage ? `<button class="btn primary" type="button" id="reseedMonthDemo">טעינה / רענון חודש דמו</button>` : ""}
     </div>
+
+    <section class="surface demo-dataset-panel">
+      <div>
+        <span class="eyebrow">Demo Dataset v${DEMO_DATASET_VERSION}</span>
+        <h3>חודש פעילות מלא לבדיקה</h3>
+        <p>הטעינה מרעננת רק רשומות עם מזהי דמו ידועים. שחקנים, דוחות ונתוני GPS אמיתיים נשארים ללא שינוי.</p>
+      </div>
+      <div class="demo-dataset-counts">
+        <span><b>${demoCounts.players}</b> שחקנים</span>
+        <span><b>${demoCounts.sessions}</b> פעילויות</span>
+        <span><b>${demoCounts.readinessReports}</b> דוחות מוכנות</span>
+        <span><b>${demoCounts.rpeReports}</b> דוחות RPE</span>
+        <span><b>${demoCounts.gpsRecords}</b> רשומות GPS</span>
+      </div>
+      <small>${demoAnchorDate ? `מעוגן לתאריך ${escapeHtml(formatDateDisplay(demoAnchorDate))}` : "חודש הדמו טרם נטען"} · מצב שמירה: ${isSupabaseMode() ? "Supabase" : "Local demo"}</small>
+    </section>
 
     ${renderStorageDiagnosticsPanel()}
 
@@ -6634,13 +9018,16 @@ function renderSettingsPage() {
             <h3>רשימת שחקנים</h3>
             <span>${state.players.length} שחקנים</span>
           </div>
-          <form id="addPlayerForm" class="grid three">
+          ${canManage ? `<form id="addPlayerForm" class="grid four">
             <input name="playerName" required placeholder="שם שחקן" />
+            <select name="playerPosition" aria-label="עמדה">
+              ${renderPositionOptions("", true)}
+            </select>
             <input name="playerPin" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" placeholder="PIN" />
             <button class="btn primary" type="submit">הוסף שחקן</button>
-          </form>
+          </form>` : `<p class="muted-text">אין לך הרשאה לעריכת שחקנים בקבוצה זו.</p>`}
           <div>
-            ${state.players.map(renderPlayerSettingsRow).join("")}
+            ${state.players.map((player) => renderPlayerSettingsRow(player, canManage)).join("")}
           </div>
         </div>
       </div>
@@ -6650,7 +9037,7 @@ function renderSettingsPage() {
           <div class="section-title">
             <h3>ספי התראה</h3>
           </div>
-          <form id="thresholdForm" class="grid">
+          ${canManage ? `<form id="thresholdForm" class="grid">
             ${thresholdInput("rpeHigh", "RPE גבוה", state.settings.rpeHigh, 1, 10)}
             ${thresholdInput("fatigueHigh", "עייפות גבוהה", state.settings.fatigueHigh, 1, 5)}
             ${thresholdInput("sorenessHigh", "כאבי שריר גבוהים", state.settings.sorenessHigh, 1, 5)}
@@ -6658,7 +9045,7 @@ function renderSettingsPage() {
             ${thresholdInput("sleepQualityLow", "איכות שינה נמוכה", state.settings.sleepQualityLow, 1, 5)}
             ${thresholdInput("readinessRiskScore", "ציון מוכנות מסוכן", state.settings.readinessRiskScore, 0, 100)}
             <button class="btn primary" type="submit">שמור ספים</button>
-          </form>
+          </form>` : `<p class="muted-text">ספי ההתראה זמינים לצפייה בלבד בהרשאה הנוכחית.</p>`}
         </div>
       </div>
     </section>
@@ -6669,12 +9056,12 @@ function renderSettingsPage() {
           <h3>אזורי כאב</h3>
           <span>${state.painAreas.length} אזורים</span>
         </div>
-        <form id="addPainForm" class="grid two">
+        ${canManage ? `<form id="addPainForm" class="grid two">
           <input name="painArea" required placeholder="אזור כאב" />
           <button class="btn primary" type="submit">הוסף אזור</button>
-        </form>
+        </form>` : ""}
         <div>
-          ${state.painAreas.map(renderPainAreaRow).join("")}
+          ${state.painAreas.map((area, index) => renderPainAreaRow(area, index, canManage)).join("")}
         </div>
       </div>
     </section>
@@ -6684,8 +9071,12 @@ function renderSettingsPage() {
 }
 
 function bindSettingsPage() {
-  document.getElementById("resetDemo").addEventListener("click", () => {
-    if (confirm("לאפס את כל הנתונים לנתוני הדמו?")) resetDemoState();
+  document.getElementById("reseedMonthDemo")?.addEventListener("click", async (event) => {
+    if (!confirm("לטעון מחדש חודש דמו מלא? רק רשומות דמו מזוהות ירועננו; נתונים אמיתיים לא יימחקו.")) return;
+    const button = event.currentTarget;
+    button.disabled = true;
+    button.textContent = isSupabaseMode() ? "טוען ל-Supabase..." : "טוען נתוני דמו...";
+    await resetDemoState();
   });
   const testSupabaseButton = document.getElementById("testSupabaseConnection");
   if (testSupabaseButton) {
@@ -6704,16 +9095,16 @@ function bindSettingsPage() {
       testSupabaseButton.disabled = false;
     });
   }
-  document.getElementById("addPlayerForm").addEventListener("submit", (event) => {
+  document.getElementById("addPlayerForm")?.addEventListener("submit", (event) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const name = String(data.get("playerName") || "").trim();
     if (!name) return;
-    state.players.push({ id: createId("p"), name, active: true, pin: normalizePin(data.get("playerPin") || "1234") });
+    state.players.push({ id: createId("p"), name, active: true, position: normalizePlayerPosition(data.get("playerPosition")), pin: normalizePin(data.get("playerPin") || "1234") });
     saveState();
     renderSettingsPage();
   });
-  document.getElementById("thresholdForm").addEventListener("submit", (event) => {
+  document.getElementById("thresholdForm")?.addEventListener("submit", (event) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     state.settings = {
@@ -6728,7 +9119,7 @@ function bindSettingsPage() {
     saveState();
     renderSettingsPage();
   });
-  document.getElementById("addPainForm").addEventListener("submit", (event) => {
+  document.getElementById("addPainForm")?.addEventListener("submit", (event) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const painArea = String(data.get("painArea") || "").trim();
@@ -6742,6 +9133,7 @@ function bindSettingsPage() {
       const playerId = button.getAttribute("data-save-player");
       const nameInput = document.querySelector(`[data-player-name="${cssEscape(playerId)}"]`);
       const pinInput = document.querySelector(`[data-player-pin="${cssEscape(playerId)}"]`);
+      const positionInput = document.querySelector(`[data-player-position="${cssEscape(playerId)}"]`);
       const activeInput = document.querySelector(`[data-player-active="${cssEscape(playerId)}"]`);
       state.players = state.players.map((player) => {
         if (player.id !== playerId) return player;
@@ -6749,6 +9141,7 @@ function bindSettingsPage() {
           ...player,
           name: String(nameInput.value || player.name).trim(),
           pin: normalizePin(pinInput.value || player.pin),
+          position: normalizePlayerPosition(positionInput.value || ""),
           active: Boolean(activeInput.checked)
         };
       });
@@ -6788,38 +9181,169 @@ function bindSettingsPage() {
   });
 }
 
+function renderCoachTeamSwitcher() {
+  const teams = getCoachTeams().filter((team) => team.active !== false);
+  if (teams.length <= 1) return "";
+  return `
+    <label class="coach-team-switcher">
+      <span class="coach-sidebar-label">קבוצה פעילה</span>
+      <select data-team-switcher aria-label="בחירת קבוצה פעילה">
+        ${teams.map((team) => `<option value="${escapeAttr(team.id)}" ${team.id === getActiveTeamId() ? "selected" : ""}>${escapeHtml(team.name)} · ${escapeHtml(getRoleLabel(team.role))}</option>`).join("")}
+      </select>
+    </label>
+  `;
+}
+
 function coachShell(active, content) {
   const navItems = [
-    ["home", "/coach", "תדרוך יומי", "◈"],
-    ["analytics", "/coach/analytics", "ניתוחים", "▥"],
-    ["players", "/coach/players", "שחקנים", "◉"],
-    ["reports", "/coach/reports", "דוחות", "▤"],
-    ["gps", "/coach/gps", "GPS", "📡"],
-    ["calendar", "/coach/calendar", "לוח שנה", "◌"],
-    ["settings", "/coach/settings", "הגדרות", "⚙"],
-    ["report", "/report", "כניסת שחקן", "↗"]
+    ["home", "/coach", "תדרוך יומי", "home"],
+    ["players", "/coach/players", "שחקנים", "users"],
+    ["gps", "/coach/gps", "GPS", "satellite"],
+    ["reports", "/coach/reports", "דוחות", "clipboard"],
+    ["calendar", "/coach/calendar", "לוח שנה", "calendar"],
+    ["analytics", "/coach/analytics", "ניתוחים", "chart"],
+    ["settings", "/coach/settings", "הגדרות", "settings"],
+    ...(isPlatformOwner() ? [["admin", "/coach/admin", "ניהול מערכת", "shield"]] : []),
+    ["report", "/report", "כניסת שחקן", "log-in"]
   ];
+  const activeItem = navItems.find(([id]) => id === active);
+  const pageTitle = activeItem ? activeItem[2] : "מרכז מאמן";
+  const collapsed = getCoachSidebarCollapsed();
   return `
-    <div class="app-frame">
-      <header class="topbar">
-        <div class="topbar-inner">
-          <a href="/coach" data-route class="brand" aria-label="דוח RPE קבוצתי">
-            <span class="brand-mark" aria-hidden="true"></span>
-            <div>
-              <h1>דוח RPE קבוצתי</h1>
-              <p>מרכז מאמן</p>
-            </div>
+    <div class="app-frame coach-app ${collapsed ? "sidebar-collapsed" : ""}" data-coach-shell>
+      <aside class="coach-sidebar" id="coachSidebar" aria-label="ניווט צוות מקצועי">
+        <div class="coach-sidebar-head">
+          <a href="/coach" data-route class="coach-sidebar-brand" aria-label="דוח RPE קבוצתי">
+            <span class="coach-sidebar-mark" aria-hidden="true">R</span>
+            <span class="coach-sidebar-brand-copy">
+              <strong>דוח RPE קבוצתי</strong>
+              <small>מרכז מאמן</small>
+            </span>
           </a>
-          <nav class="nav-tabs" aria-label="ניווט">
-            ${navItems.map(([id, href, label, icon]) => `
-              <a href="${href}" data-route class="nav-link ${active === id ? "active" : ""}"><span aria-hidden="true">${escapeHtml(icon)}</span>${label}</a>
-            `).join("")}
-          </nav>
+          <button type="button" class="sidebar-collapse-button" data-sidebar-collapse aria-label="${collapsed ? "הרחבת סרגל הניווט" : "צמצום סרגל הניווט"}" aria-expanded="${collapsed ? "false" : "true"}">
+            ${coachNavIcon(collapsed ? "panel-open" : "panel-close")}
+          </button>
         </div>
-      </header>
-      <main class="page">${content}</main>
+
+        <nav class="coach-sidebar-nav" aria-label="ניווט ראשי">
+          ${navItems.map(([id, href, label, icon], index) => `
+            <a href="${href}" data-route class="coach-sidebar-link ${id === "report" ? "player-entry" : ""} ${active === id ? "active" : ""}" aria-current="${active === id ? "page" : "false"}" data-nav-label="${escapeAttr(label)}" ${id === "report" ? `style="--nav-order: ${index}"` : ""}>
+              ${coachNavIcon(icon)}
+              <span class="coach-sidebar-label">${escapeHtml(label)}</span>
+            </a>
+          `).join("")}
+        </nav>
+        <div class="coach-sidebar-account">
+          <span>${escapeHtml(getActiveTeamName())}</span>
+          <strong>${escapeHtml(getActiveCoachName())}</strong>
+          ${renderCoachTeamSwitcher()}
+          <small class="coach-role-label">${escapeHtml(getRoleLabel(getActiveTeamRole()))}</small>
+          ${isSupabaseMode() ? `<button type="button" class="sidebar-logout-button" data-coach-logout>${coachNavIcon("log-out")}<span class="coach-sidebar-label">יציאה</span></button>` : ""}
+        </div>
+      </aside>
+
+      <button type="button" class="coach-sidebar-overlay" data-sidebar-overlay aria-label="סגירת תפריט"></button>
+
+      <div class="coach-workspace">
+        <header class="coach-workspace-header">
+          <button type="button" class="mobile-sidebar-button" data-sidebar-mobile-toggle aria-label="פתיחת תפריט" aria-controls="coachSidebar" aria-expanded="false">
+            ${coachNavIcon("menu")}
+          </button>
+          <div class="coach-workspace-title">
+            <span>${escapeHtml(pageTitle)}</span>
+            <small>${escapeHtml(getActiveTeamName())} · ${escapeHtml(getRoleLabel(getActiveTeamRole()))} · ${escapeHtml(getActiveCoachName())} · ${escapeHtml(formatDateDisplay(todayIso()))}</small>
+          </div>
+        </header>
+        <main class="page coach-page">${content}</main>
+      </div>
     </div>
   `;
+}
+
+function getCoachSidebarCollapsed() {
+  try {
+    return localStorage.getItem(COACH_SIDEBAR_STATE_KEY) === "1";
+  } catch (error) {
+    return false;
+  }
+}
+
+function coachNavIcon(name) {
+  const icons = {
+    home: '<path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/>',
+    users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+    satellite: '<path d="M13 7 9 3 5 7l4 4"/><path d="m17 11 4 4-4 4-4-4"/><path d="m8 12-4 4 4 4 4-4"/><path d="m16 8 3-3"/><path d="M2 22 7 17"/>',
+    clipboard: '<rect width="14" height="18" x="5" y="3" rx="2"/><path d="M9 3V1h6v2"/><path d="M9 8h6M9 12h6M9 16h4"/>',
+    shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-5"/>',
+    calendar: '<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/>',
+    chart: '<path d="M3 3v18h18"/><path d="m7 16 4-5 4 3 5-7"/>',
+    settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 8.94 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15 1.7 1.7 0 0 0 3.08 14H3v-4h.08A1.7 1.7 0 0 0 4.6 8.94a1.7 1.7 0 0 0-.34-1.88L4.2 7l2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6 1.7 1.7 0 0 0 10 3.08V3h4v.08A1.7 1.7 0 0 0 15.06 4.6a1.7 1.7 0 0 0 1.88-.34L17 4.2 19.8 7l-.06.06A1.7 1.7 0 0 0 19.4 9 1.7 1.7 0 0 0 20.92 10H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"/>',
+    "log-in": '<path d="M10 17l5-5-5-5"/><path d="M15 12H3"/><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>',
+    "log-out": '<path d="M14 17l5-5-5-5"/><path d="M19 12H8"/><path d="M10 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/>',
+    menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
+    "panel-close": '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18M10 9l-3 3 3 3"/>',
+    "panel-open": '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18M8 9l3 3-3 3"/>'
+  };
+  return `<svg class="coach-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name] || icons.home}</svg>`;
+}
+
+function bindCoachNavigation() {
+  const shell = document.querySelector("[data-coach-shell]");
+  if (!shell) return;
+  const sidebar = shell.querySelector(".coach-sidebar");
+  const collapseButton = shell.querySelector("[data-sidebar-collapse]");
+  const mobileButton = shell.querySelector("[data-sidebar-mobile-toggle]");
+  const overlay = shell.querySelector("[data-sidebar-overlay]");
+
+  const setMobileOpen = (open) => {
+    shell.classList.toggle("sidebar-mobile-open", open);
+    mobileButton?.setAttribute("aria-expanded", String(open));
+    document.body.classList.toggle("coach-menu-open", open);
+  };
+
+  collapseButton?.addEventListener("click", () => {
+    const collapsed = shell.classList.toggle("sidebar-collapsed");
+    collapseButton.setAttribute("aria-expanded", String(!collapsed));
+    collapseButton.setAttribute("aria-label", collapsed ? "הרחבת סרגל הניווט" : "צמצום סרגל הניווט");
+    collapseButton.innerHTML = coachNavIcon(collapsed ? "panel-open" : "panel-close");
+    try {
+      localStorage.setItem(COACH_SIDEBAR_STATE_KEY, collapsed ? "1" : "0");
+    } catch (error) {
+      console.warn("[UI] לא ניתן לשמור את מצב סרגל הניווט", error);
+    }
+  });
+
+  mobileButton?.addEventListener("click", () => setMobileOpen(!shell.classList.contains("sidebar-mobile-open")));
+  overlay?.addEventListener("click", () => setMobileOpen(false));
+  sidebar?.querySelectorAll("a[data-route]").forEach((link) => link.addEventListener("click", () => setMobileOpen(false)));
+  shell.querySelector("[data-team-switcher]")?.addEventListener("change", async (event) => {
+    await switchActiveCoachTeam(event.currentTarget.value);
+  });
+  shell.querySelector("[data-coach-logout]")?.addEventListener("click", async () => {
+    await supabaseAuthLogout();
+    clearCoachSession();
+    navigate("/coach/login", true);
+  });
+}
+
+async function switchActiveCoachTeam(teamId) {
+  const teams = getCoachTeams();
+  const team = teams.find((item) => item.id === teamId);
+  if (!team || !coachSession) return;
+  saveCoachSession({
+    ...coachSession,
+    coachId: team.coachId || coachSession.coachId,
+    teamId: team.id,
+    teamName: team.name,
+    teamSlug: team.slug || slugify(team.name),
+    role: isPlatformOwner() ? "owner" : team.role || "coach"
+  });
+  setPlayerTeamContext({ teamId: team.id, teamName: team.name, teamSlug: team.slug || slugify(team.name) });
+  state = createEmptyState();
+  supabaseStatus = "idle";
+  supabaseFatalError = false;
+  supabaseError = "";
+  await bootstrapSupabaseState();
 }
 
 function metricCard(label, value, note = "") {
@@ -7009,33 +9533,36 @@ function renderSessionsTable(sessions) {
   `;
 }
 
-function renderPlayerSettingsRow(player) {
+function renderPlayerSettingsRow(player, canManage = true) {
   return `
     <div class="inline-edit player-settings-row">
-      <input data-player-name="${escapeAttr(player.id)}" value="${escapeAttr(player.name)}" />
-      <input data-player-pin="${escapeAttr(player.id)}" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" value="${escapeAttr(player.pin)}" aria-label="PIN" />
+      <input data-player-name="${escapeAttr(player.id)}" value="${escapeAttr(player.name)}" ${canManage ? "" : "readonly"} />
+      <select data-player-position="${escapeAttr(player.id)}" aria-label="עמדה" ${canManage ? "" : "disabled"}>
+        ${renderPositionOptions(player.position || getPlayerPrimaryPosition(player.id), true)}
+      </select>
+      <input data-player-pin="${escapeAttr(player.id)}" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" value="${escapeAttr(player.pin)}" aria-label="PIN" ${canManage ? "" : "readonly"} />
       <label class="checkbox-line">
-        <input data-player-active="${escapeAttr(player.id)}" type="checkbox" ${player.active ? "checked" : ""} />
+        <input data-player-active="${escapeAttr(player.id)}" type="checkbox" ${player.active ? "checked" : ""} ${canManage ? "" : "disabled"} />
         פעיל
       </label>
-      <div class="actions">
+      ${canManage ? `<div class="actions">
         <button class="btn secondary" type="button" data-save-player="${escapeAttr(player.id)}">שמירה</button>
         <button class="btn danger" type="button" data-delete-player="${escapeAttr(player.id)}">מחיקה</button>
-      </div>
+      </div>` : `<span class="badge neutral">צפייה</span>`}
     </div>
   `;
 }
 
-function renderPainAreaRow(area, index) {
+function renderPainAreaRow(area, index, canManage = true) {
   const cannotDelete = area === NO_PAIN;
   return `
     <div class="inline-edit">
-      <input data-pain-index="${index}" value="${escapeAttr(area)}" ${cannotDelete ? "readonly" : ""} />
+      <input data-pain-index="${index}" value="${escapeAttr(area)}" ${cannotDelete || !canManage ? "readonly" : ""} />
       <span></span>
-      <div class="actions">
+      ${canManage ? `<div class="actions">
         <button class="btn secondary" type="button" data-save-pain="${index}" ${cannotDelete ? "disabled" : ""}>שמירה</button>
         <button class="btn danger" type="button" data-delete-pain="${index}" ${cannotDelete ? "disabled" : ""}>מחיקה</button>
-      </div>
+      </div>` : `<span class="badge neutral">צפייה</span>`}
     </div>
   `;
 }
@@ -7820,9 +10347,40 @@ function getPostReportFor(playerId, date) {
 }
 
 function getLoggedPlayer() {
-  const playerId = localStorage.getItem(PLAYER_SESSION_KEY);
-  if (!playerId) return null;
-  return state.players.find((player) => player.id === playerId && player.active) || null;
+  const session = getPlayerSession();
+  if (!session?.playerId) return null;
+  if (session.teamId && session.teamId !== getActiveTeamId()) return null;
+  return state.players.find((player) => player.id === session.playerId && player.active) || {
+    id: session.playerId,
+    teamId: session.teamId || getActiveTeamId(),
+    name: session.playerName || "שחקן",
+    active: true,
+    pin: session.pin || "",
+    position: ""
+  };
+}
+
+function getPlayerSession() {
+  try {
+    const raw = localStorage.getItem(PLAYER_SESSION_KEY);
+    if (!raw) return null;
+    if (!raw.trim().startsWith("{")) return { playerId: raw, teamId: getActiveTeamId() };
+    const parsed = JSON.parse(raw);
+    return parsed && parsed.playerId ? parsed : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function setLoggedPlayer(player, pin = "") {
+  localStorage.setItem(PLAYER_SESSION_KEY, JSON.stringify({
+    playerId: player.id,
+    playerName: player.name,
+    teamId: getActiveTeamId(),
+    teamName: getActiveTeamName(),
+    pin: normalizePin(pin || player.pin || ""),
+    loggedAt: new Date().toISOString()
+  }));
 }
 
 function getActivePlayers() {
@@ -7833,11 +10391,56 @@ function getPlayer(playerId) {
   return state.players.find((player) => player.id === playerId) || null;
 }
 
+function normalizePlayerPosition(position) {
+  const value = String(position || "").trim();
+  if (!value) return "";
+  const lower = value.toLowerCase();
+  const aliases = new Map([
+    ["goalkeeper", "שוער"],
+    ["gk", "שוער"],
+    ["שוער", "שוער"],
+    ["defender", "בלם"],
+    ["center back", "בלם"],
+    ["centre back", "בלם"],
+    ["cb", "בלם"],
+    ["בלם", "בלם"],
+    ["full back", "מגן"],
+    ["fullback", "מגן"],
+    ["fb", "מגן"],
+    ["מגן", "מגן"],
+    ["midfielder", "קשר"],
+    ["midfield", "קשר"],
+    ["cm", "קשר"],
+    ["קשר", "קשר"],
+    ["winger", "כנף"],
+    ["wing", "כנף"],
+    ["כנף", "כנף"],
+    ["striker", "חלוץ"],
+    ["forward", "חלוץ"],
+    ["st", "חלוץ"],
+    ["חלוץ", "חלוץ"]
+  ]);
+  return aliases.get(lower) || (PLAYER_POSITIONS.some(([label]) => label === value) ? value : value);
+}
+
+function renderPositionOptions(selected, includeEmpty = true) {
+  const normalized = normalizePlayerPosition(selected);
+  return `
+    ${includeEmpty ? `<option value="">עמדה לא מוגדרת</option>` : ""}
+    ${PLAYER_POSITIONS.map(([label]) => `<option value="${escapeAttr(label)}" ${normalized === label ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}
+  `;
+}
+
 function getPlayerPrimaryPosition(playerId) {
+  const player = getPlayer(playerId);
+  if (player && player.position) return normalizePlayerPosition(player.position);
   const gps = state.gpsRecords.filter((record) => record.playerId === playerId && record.position);
   if (!gps.length) return "";
   const counts = new Map();
-  gps.forEach((record) => counts.set(record.position, (counts.get(record.position) || 0) + 1));
+  gps.forEach((record) => {
+    const position = normalizePlayerPosition(record.position);
+    counts.set(position, (counts.get(position) || 0) + 1);
+  });
   return Array.from(counts.entries()).sort((a, b) => b[1] - a[1])[0][0];
 }
 
@@ -7872,6 +10475,10 @@ function syncPlayerNames() {
   };
   state.reports = state.reports.map(sync);
   state.readinessReports = state.readinessReports.map(sync);
+  state.gpsRecords = state.gpsRecords.map((record) => {
+    const player = getPlayer(record.playerId);
+    return player ? { ...record, playerName: player.name, position: normalizePlayerPosition(record.position || player.position || "") } : record;
+  });
 }
 
 function sessionTypeBadge(type) {
@@ -8042,4 +10649,15 @@ function renderNotFound() {
       </div>
     </main>
   `);
+}
+
+function renderAccessDenied() {
+  mount(coachShell("admin", `
+    <section class="surface empty-state admin-denied">
+      <span class="eyebrow">הרשאות</span>
+      <h2>אין הרשאה לניהול מערכת</h2>
+      <p>אזור זה פתוח רק למשתמשי Owner של הפלטפורמה.</p>
+      <a href="/coach" data-route class="btn primary">חזרה לתדרוך יומי</a>
+    </section>
+  `));
 }
