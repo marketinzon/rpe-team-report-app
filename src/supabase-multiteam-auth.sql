@@ -51,6 +51,23 @@ $$;
 grant execute on function public.current_coach_team_ids() to authenticated;
 grant execute on function public.can_access_team(uuid) to authenticated;
 
+create or replace function public.player_team_list()
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'id', id,
+    'name', name,
+    'slug', slug,
+    'active', active
+  ) order by name), '[]'::jsonb)
+  from public.teams
+  where active = true
+$$;
+
 -- Player-facing helpers. They expose only roster labels and validate PINs
 -- server-side. PINs are not hard-coded in frontend code.
 create or replace function public.player_team_roster(p_team_code text)
@@ -212,6 +229,7 @@ as $$
 $$;
 
 grant usage on schema public to anon, authenticated;
+grant execute on function public.player_team_list() to anon, authenticated;
 grant execute on function public.player_team_roster(text) to anon, authenticated;
 grant execute on function public.player_login(text, text, text) to anon, authenticated;
 grant execute on function public.rpe_request_header(text) to anon, authenticated;

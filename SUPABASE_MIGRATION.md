@@ -25,6 +25,12 @@ Role migration note:
 - `src/supabase-owner-admin.sql` then safely drops/recreates `coaches_role_check`, converts legacy `owner` rows to `team_admin`, and enables final roles: `team_admin`, `coach`, `viewer`.
 - If you already hit `violates check constraint "coaches_role_check"` for `team_admin`, rerun the corrected `src/supabase-real-use-bootstrap.sql` first, then run `src/supabase-owner-admin.sql`.
 
+Player login team picker:
+
+- `src/supabase-real-use-bootstrap.sql` creates `player_team_list()` so `/report` can show a team-name dropdown instead of asking players to type a team code.
+- After this update, rerun `src/supabase-real-use-bootstrap.sql` in Supabase. It is safe to rerun and does not delete real data.
+- The player still logs in through `player_login(team, player, PIN)`; the team slug/id is now selected behind the scenes.
+
 Required Supabase Auth users:
 
 | Email | Password | Role / Team |
@@ -94,6 +100,7 @@ src/supabase-real-use-bootstrap.sql
 This file is safe to rerun. It creates or updates:
 
 - `player_team_roster(p_team_code text)`
+- `player_team_list()`
 - `player_login(p_team_code text, p_player_id text, p_pin_code text)`
 - anonymous player report insert/update RLS for the selected player and team
 - Team 1: `קבוצת צפון`, code `team-1`

@@ -141,6 +141,8 @@ assert((team2Context.teams || []).length === 1 && team2Context.teams[0].slug ===
 
 const roster1 = await anonRpc(env, "player_team_roster", { p_team_code: "team-1" });
 const roster2 = await anonRpc(env, "player_team_roster", { p_team_code: "team-2" });
+const teamList = await anonRpc(env, "player_team_list", {});
+assert(Array.isArray(teamList) && teamList.some((team) => team.slug === "team-1") && teamList.some((team) => team.slug === "team-2"), "Player team list RPC failed or is missing Team 1 / Team 2");
 assert(roster1?.team?.slug === "team-1" && (roster1.players || []).length > 0, "Team 1 player roster RPC failed");
 assert(roster2?.team?.slug === "team-2" && (roster2.players || []).length > 0, "Team 2 player roster RPC failed");
 

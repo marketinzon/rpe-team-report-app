@@ -246,6 +246,15 @@ const uiState = {
   gpsImportModalOpen: false,
   gpsSessionSetup: createDefaultGpsSessionSetup(),
   sessionEditId: null,
+  playerLogin: {
+    teams: [],
+    teamsLoaded: false,
+    teamsLoading: false,
+    teamError: "",
+    selectedTeamCode: "",
+    rosterLoading: false,
+    rosterError: ""
+  },
   ownerAdmin: {
     tab: "teams",
     teamFilter: "all",
@@ -2426,7 +2435,136 @@ async function verifyPlayerLoginWithSupabase(teamCode, playerId, pin) {
   };
 }
 
+function renderPlayerTeamSelectorV2() {
+  if (!isSupabaseMode()) {
+    return `
+      <div class="field player-team-loader player-login-step-panel is-complete">
+        <label for="playerTeamSelect">בחר קבוצה</label>
+        <select id="playerTeamSelect" name="teamCode" disabled>
+          <option value="${escapeAttr(getActiveTeamSlug())}">${escapeHtml(getActiveTeamName())}</option>
+        </select>
+        <small>מצב דמו מקומי משתמש בקבוצה הפעילה בלבד.</small>
+      </div>
+    `;
+  }
+  const loginState = uiState.playerLogin;
+  const teams = Array.isArray(loginState.teams) ? loginState.teams : [];
+  const selectedCode = loginState.selectedTeamCode || "";
+  const loadingLabel = loginState.teamsLoading ? "טוען קבוצות..." : "בחר קבוצה";
+  return `
+    <div class="field player-team-loader player-login-step-panel ${selectedCode ? "is-complete" : ""}">
+      <label for="playerTeamSelect">בחר קבוצה</label>
+      <select id="playerTeamSelect" name="teamCode" required ${loginState.teamsLoading ? "disabled" : ""}>
+        <option value="">${escapeHtml(loadingLabel)}</option>
+        ${teams.map((team) => `<option value="${escapeAttr(team.slug || team.id)}" ${selectedCode === (team.slug || team.id) ? "selected" : ""}>${escapeHtml(team.name)}</option>`).join("")}
+      </select>
+      <small>בחר את הקבוצה שלך כדי לראות רק את שחקני הקבוצה הזו.</small>
+      ${loginState.teamError ? `<div class="diagnostic-result red">${escapeHtml(loginState.teamError)}</div>` : ""}
+      ${loginState.rosterError ? `<div class="diagnostic-result red">${escapeHtml(loginState.rosterError)}</div>` : ""}
+      ${loginState.rosterLoading ? `<div class="diagnostic-result">טוען שחקנים...</div>` : ""}
+    </div>
+  `;
+}
+
+function renderPlayerSelectForLogin() {
+  const canShowPlayers = !isSupabaseMode() || Boolean(uiState.playerLogin.selectedTeamCode);
+  const players = canShowPlayers ? getActivePlayers() : [];
+  const disabled = isSupabaseMode() && (!uiState.playerLogin.selectedTeamCode || uiState.playerLogin.rosterLoading);
+  const placeholder = !uiState.playerLogin.selectedTeamCode && isSupabaseMode()
+    ? "בחר קבוצה קודם"
+    : uiState.playerLogin.rosterLoading
+      ? "טוען שחקנים..."
+      : "בחר שחקן";
+  return `
+    <div class="field player-login-step-panel ${players.length ? "is-complete" : ""}">
+      <label for="loginPlayerId">בחר שחקן</label>
+      <select id="loginPlayerId" name="playerId" required ${disabled ? "disabled" : ""}>
+        <option value="">${escapeHtml(placeholder)}</option>
+        ${players.map((player) => `<option value="${escapeAttr(player.id)}">${escapeHtml(player.name)}</option>`).join("")}
+      </select>
+    </div>
+  `;
+}
+
+async function loadPlayerTeamsForLogin() {
+  if (!isSupabaseMode() || uiState.playerLogin.teamsLoading || uiState.playerLogin.teamsLoaded) return;
+  uiState.playerLogin.teamsLoading = true;
+  uiState.playerLogin.teamError = "";
+  renderPlayerLogin();
+  try {
+    const payload = await supabaseRpc("player_team_list", {});
+    const teams = (Array.isArray(payload) ? payload : [])
+      .map((team) => ({
+        id: team.id,
+        name: team.name || team.slug || "קבוצה",
+        slug: team.slug || team.id,
+        active: team.active !== false
+      }))
+      .filter((team) => team.id && team.active);
+    uiState.playerLogin.teams = teams;
+    uiState.playerLogin.teamsLoaded = true;
+    const savedTeam = getPlayerTeamContext();
+    const queryTeam = new URLSearchParams(window.location.search).get("team") || "";
+    const preferredCode = uiState.playerLogin.selectedTeamCode || queryTeam || savedTeam?.teamSlug || "";
+    const preferredTeam = teams.find((team) => team.slug === preferredCode || team.id === preferredCode);
+    if (preferredTeam && !uiState.playerLogin.selectedTeamCode) {
+      uiState.playerLogin.selectedTeamCode = preferredTeam.slug || preferredTeam.id;
+      if (!state.players.length || getActiveTeamId() !== preferredTeam.id) {
+        await loadPlayerTeamByCodeV2(uiState.playerLogin.selectedTeamCode, { renderAfterLoad: false });
+      }
+    }
+  } catch (error) {
+    console.error("[Player Login] failed to load teams", error);
+    uiState.playerLogin.teamError = error.message || "טעינת רשימת הקבוצות נכשלה. ודא שה-SQL המעודכן הורץ בסופאבייס.";
+  } finally {
+    uiState.playerLogin.teamsLoading = false;
+    renderPlayerLogin();
+  }
+}
+
+async function loadPlayerTeamByCodeV2(teamCode, options = {}) {
+  const code = String(teamCode || "").trim();
+  if (!code) throw new Error("יש לבחור קבוצה.");
+  uiState.playerLogin.rosterLoading = true;
+  uiState.playerLogin.rosterError = "";
+  uiState.playerLogin.selectedTeamCode = code;
+  if (options.renderAfterLoad !== false) renderPlayerLogin();
+  try {
+    const payload = await supabaseRpc("player_team_roster", { p_team_code: code });
+    const roster = normalizeRpcPayload(payload);
+    const team = roster.team;
+    if (!team) throw new Error("לא נמצאה קבוצה פעילה.");
+    const teamId = team.id;
+    setPlayerTeamContext({ teamId, teamName: team.name, teamSlug: team.slug });
+    state = normalizeState({
+      ...createEmptyState(),
+      team: { id: team.id, name: team.name, slug: team.slug, active: team.active !== false },
+      players: Array.isArray(roster.players) ? roster.players.map((player) => ({
+        id: player.id,
+        teamId,
+        name: player.name,
+        active: player.active !== false,
+        position: normalizePlayerPosition(player.position || ""),
+        pin: ""
+      })) : [],
+      painAreas: Array.isArray(roster.painAreas) && roster.painAreas.length ? roster.painAreas : [...DEFAULT_PAIN_AREAS],
+      settings: roster.settings ? { ...DEFAULT_SETTINGS, ...roster.settings } : { ...DEFAULT_SETTINGS }
+    });
+    uiState.playerLogin.selectedTeamCode = team.slug || code;
+    return state;
+  } catch (error) {
+    uiState.playerLogin.rosterError = error.message || "טעינת שחקני הקבוצה נכשלה.";
+    throw error;
+  } finally {
+    uiState.playerLogin.rosterLoading = false;
+    if (options.renderAfterLoad !== false) renderPlayerLogin();
+  }
+}
+
 function renderPlayerLogin() {
+  if (isSupabaseMode() && !coachSession && !uiState.playerLogin.teamsLoaded && !uiState.playerLogin.teamsLoading) {
+    setTimeout(() => loadPlayerTeamsForLogin(), 0);
+  }
   const html = `
     <main class="player-page player-app">
       <header class="player-hero player-login-hero">
@@ -2453,12 +2591,12 @@ function renderPlayerLogin() {
           <li><span>2</span><strong>הזן קוד אישי</strong></li>
           <li><span>3</span><strong>לחץ כניסה</strong></li>
         </ol>
-        ${renderPlayerTeamSelector()}
+        ${renderPlayerTeamSelectorV2()}
         <div class="field">
           <label for="loginPlayerId">שם שחקן</label>
-          <select id="loginPlayerId" name="playerId" required>
+          <select id="loginPlayerId" name="playerId" required ${isSupabaseMode() && (!uiState.playerLogin.selectedTeamCode || uiState.playerLogin.rosterLoading) ? "disabled" : ""}>
             <option value="">בחירה</option>
-            ${getActivePlayers().map((player) => `<option value="${escapeAttr(player.id)}">${escapeHtml(player.name)}</option>`).join("")}
+            ${(!isSupabaseMode() || uiState.playerLogin.selectedTeamCode ? getActivePlayers() : []).map((player) => `<option value="${escapeAttr(player.id)}">${escapeHtml(player.name)}</option>`).join("")}
           </select>
         </div>
         <div class="field">
@@ -2473,6 +2611,41 @@ function renderPlayerLogin() {
   `;
 
   mount(html, () => {
+    document.querySelector('label[for="loginPlayerId"]')?.replaceChildren(document.createTextNode("בחר שחקן"));
+    document.querySelector('label[for="loginPin"]')?.replaceChildren(document.createTextNode("קוד אישי / PIN"));
+    const playerSelect = document.getElementById("loginPlayerId");
+    if (playerSelect?.options?.length) {
+      playerSelect.options[0].textContent = isSupabaseMode() && !uiState.playerLogin.selectedTeamCode
+        ? "בחר קבוצה קודם"
+        : uiState.playerLogin.rosterLoading
+          ? "טוען שחקנים..."
+          : "בחר שחקן";
+    }
+    const loginSubmitButton = document.querySelector('#playerLoginForm button[type="submit"]');
+    if (loginSubmitButton) loginSubmitButton.textContent = "כניסה";
+    document.querySelectorAll(".login-steps li strong").forEach((node, index) => {
+      node.textContent = ["בחר קבוצה", "בחר שחקן", "הזן קוד אישי"][index] || node.textContent;
+    });
+    const teamSelect = document.getElementById("playerTeamSelect");
+    if (teamSelect && isSupabaseMode()) {
+      teamSelect.addEventListener("change", async (event) => {
+        const code = event.currentTarget.value;
+        uiState.playerLogin.selectedTeamCode = code;
+        uiState.playerLogin.rosterError = "";
+        if (!code) {
+          setPlayerTeamContext(null);
+          state = normalizeState({ ...createEmptyState() });
+          renderPlayerLogin();
+          return;
+        }
+        state = normalizeState({ ...createEmptyState() });
+        try {
+          await loadPlayerTeamByCodeV2(code);
+        } catch (error) {
+          console.error("[Player Login] failed to load selected team", error);
+        }
+      });
+    }
     const loadTeamButton = document.getElementById("loadPlayerTeam");
     if (loadTeamButton) {
       loadTeamButton.addEventListener("click", async () => {
@@ -2506,11 +2679,13 @@ function renderPlayerLogin() {
       const data = new FormData(event.currentTarget);
       const playerId = String(data.get("playerId") || "");
       const pin = normalizePin(data.get("pin"));
+      const selectedTeamCode = String(data.get("teamCode") || uiState.playerLogin.selectedTeamCode || "");
       const loginError = document.getElementById("loginError");
       loginError.classList.remove("show");
       try {
+        if (isSupabaseMode() && !coachSession && !selectedTeamCode) throw new Error("יש לבחור קבוצה.");
         const player = isSupabaseMode() && !coachSession
-          ? await verifyPlayerLoginWithSupabase(String(data.get("teamCode") || getActiveTeamSlug()), playerId, pin)
+          ? await verifyPlayerLoginWithSupabase(selectedTeamCode, playerId, pin)
           : state.players.find((item) => item.id === playerId && item.active && item.pin === pin);
         if (!player) throw new Error("שם או PIN אינם נכונים.");
         if (!state.players.some((item) => item.id === player.id)) {
