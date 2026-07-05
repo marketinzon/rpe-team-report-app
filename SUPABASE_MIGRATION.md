@@ -27,9 +27,11 @@ Role migration note:
 
 Player login team picker:
 
-- `src/supabase-real-use-bootstrap.sql` creates `player_team_list()` so `/report` can show a team-name dropdown instead of asking players to type a team code.
-- After this update, rerun `src/supabase-real-use-bootstrap.sql` in Supabase. It is safe to rerun and does not delete real data.
-- The player still logs in through `player_login(team, player, PIN)`; the team slug/id is now selected behind the scenes.
+- `/report` loads active teams directly from `public.teams` with:
+  `active=eq.true&select=id,name,slug,active&order=name.asc`
+- Run `src/supabase-public-team-listing.sql` or rerun `src/supabase-real-use-bootstrap.sql` so RLS allows anonymous users to read active team names/slugs.
+- This public policy exposes only active team rows. It does not expose players, reports, GPS, PINs, or coach data.
+- The player still logs in through `player_login(team, player, PIN)`; the team slug/id is selected behind the scenes.
 
 Required Supabase Auth users:
 

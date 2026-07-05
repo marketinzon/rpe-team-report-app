@@ -2492,7 +2492,7 @@ async function loadPlayerTeamsForLogin() {
   uiState.playerLogin.teamError = "";
   renderPlayerLogin();
   try {
-    const payload = await supabaseRpc("player_team_list", {});
+    const payload = await supabaseSelect("teams", "active=eq.true&select=id,name,slug,active&order=name.asc");
     const teams = (Array.isArray(payload) ? payload : [])
       .map((team) => ({
         id: team.id,

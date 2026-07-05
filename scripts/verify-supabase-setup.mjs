@@ -109,6 +109,10 @@ async function getPlayers(env, token) {
   return request(env, "/rest/v1/players?select=id,name,team_id&order=name.asc", { token });
 }
 
+async function getPublicActiveTeams(env) {
+  return request(env, "/rest/v1/teams?active=eq.true&select=id,name,slug,active&order=name.asc");
+}
+
 const dotEnv = await loadDotEnv();
 const env = {
   url: envValue(dotEnv, "SUPABASE_URL") || envValue(dotEnv, "NEXT_PUBLIC_SUPABASE_URL"),
@@ -141,8 +145,8 @@ assert((team2Context.teams || []).length === 1 && team2Context.teams[0].slug ===
 
 const roster1 = await anonRpc(env, "player_team_roster", { p_team_code: "team-1" });
 const roster2 = await anonRpc(env, "player_team_roster", { p_team_code: "team-2" });
-const teamList = await anonRpc(env, "player_team_list", {});
-assert(Array.isArray(teamList) && teamList.some((team) => team.slug === "team-1") && teamList.some((team) => team.slug === "team-2"), "Player team list RPC failed or is missing Team 1 / Team 2");
+const teamList = await getPublicActiveTeams(env);
+assert(Array.isArray(teamList) && teamList.some((team) => team.slug === "team-1") && teamList.some((team) => team.slug === "team-2"), "Public active teams query failed or is missing Team 1 / Team 2");
 assert(roster1?.team?.slug === "team-1" && (roster1.players || []).length > 0, "Team 1 player roster RPC failed");
 assert(roster2?.team?.slug === "team-2" && (roster2.players || []).length > 0, "Team 2 player roster RPC failed");
 
@@ -159,6 +163,7 @@ console.log(JSON.stringify({
   ownerTeams: ownerContext.teams.map((team) => team.slug),
   team1CoachTeams: team1Context.teams.map((team) => team.slug),
   team2CoachTeams: team2Context.teams.map((team) => team.slug),
+  publicActiveTeams: teamList.map((team) => team.name),
   team1Players: team1Players.length,
   team2Players: team2Players.length
 }, null, 2));

@@ -9,6 +9,7 @@ const app = await readFile(path.join(rootDir, "assets", "app.js"), "utf8");
 const sql = await readFile(path.join(rootDir, "src", "supabase-multiteam-auth.sql"), "utf8");
 const bootstrapSql = await readFile(path.join(rootDir, "src", "supabase-real-use-bootstrap.sql"), "utf8");
 const ownerAdminSql = await readFile(path.join(rootDir, "src", "supabase-owner-admin.sql"), "utf8");
+const publicTeamListingSql = await readFile(path.join(rootDir, "src", "supabase-public-team-listing.sql"), "utf8");
 const adminApi = await readFile(path.join(rootDir, "api", "admin.js"), "utf8");
 const schema = await readFile(path.join(rootDir, "src", "supabase-schema.sql"), "utf8");
 const seedAuthUsers = await readFile(path.join(rootDir, "scripts", "seed-auth-users.mjs"), "utf8");
@@ -23,7 +24,7 @@ assert(app.includes("supabaseAuthPasswordLogin"), "coach password login function
 assert(app.includes("getActiveTeamId()"), "active team helper is missing");
 assert(app.includes("Authorization: getSupabaseAuthorizationHeader()"), "Supabase REST does not use dynamic auth header");
 assert(app.includes("player_team_roster"), "player team roster RPC is missing");
-assert(app.includes("player_team_list"), "player team list RPC is missing from player login flow");
+assert(app.includes('supabaseSelect("teams", "active=eq.true&select=id,name,slug,active&order=name.asc")'), "player login must load active teams directly from the teams table");
 assert(app.includes("player_login"), "player login RPC is missing");
 assert(app.includes("x-rpe-team-id"), "player team RLS header is missing");
 assert(app.includes("team_id=eq.${encodeURIComponent(teamId)}"), "Supabase loading is not visibly team-scoped");
@@ -33,6 +34,10 @@ assert(schema.includes("team_id uuid not null"), "base schema must include team_
 assert(schema.includes("public.can_access_team(team_id)"), "coach RLS policies are missing from schema");
 assert(sql.includes("create or replace function public.player_team_roster"), "player roster RPC migration missing");
 assert(sql.includes("create or replace function public.player_team_list"), "player team list RPC migration missing");
+assert(sql.includes('create policy "public can select active teams"'), "public active team select policy missing from multiteam migration");
+assert(sql.includes("grant select on public.teams to anon"), "anon team select grant missing from multiteam migration");
+assert(publicTeamListingSql.includes('create policy "public can select active teams"'), "public active team select policy patch file is missing");
+assert(publicTeamListingSql.includes("grant select on public.teams to anon"), "anon team select grant patch file is missing");
 assert(sql.includes("create or replace function public.player_login"), "player login RPC migration missing");
 assert(sql.includes("public.can_player_submit_report"), "player report RLS helper missing");
 assert(sql.includes("for insert") && sql.includes("for update"), "player report insert/update policies missing");
@@ -40,6 +45,8 @@ assert(sql.includes("training_match"), "GPS friendly match type migration missin
 
 assert(bootstrapSql.includes("create or replace function public.player_team_roster"), "real-use bootstrap is missing player roster RPC");
 assert(bootstrapSql.includes("create or replace function public.player_team_list"), "real-use bootstrap is missing player team list RPC");
+assert(bootstrapSql.includes('create policy "public can select active teams"'), "public active team select policy missing from real-use bootstrap");
+assert(bootstrapSql.includes("grant select on public.teams to anon"), "anon team select grant missing from real-use bootstrap");
 assert(bootstrapSql.includes("create or replace function public.player_login"), "real-use bootstrap is missing player login RPC");
 assert(bootstrapSql.includes("coach.team1@example.com"), "Team 1 demo coach email missing from bootstrap");
 assert(bootstrapSql.includes("coach.team2@example.com"), "Team 2 demo coach email missing from bootstrap");

@@ -229,6 +229,7 @@ as $$
 $$;
 
 grant usage on schema public to anon, authenticated;
+grant select on public.teams to anon;
 grant execute on function public.player_team_list() to anon, authenticated;
 grant execute on function public.player_team_roster(text) to anon, authenticated;
 grant execute on function public.player_login(text, text, text) to anon, authenticated;
@@ -237,6 +238,13 @@ grant execute on function public.can_player_submit_report(uuid, text) to anon, a
 
 grant insert, update on public.readiness_reports to anon;
 grant insert, update on public.rpe_reports to anon;
+
+drop policy if exists "public can select active teams" on public.teams;
+create policy "public can select active teams"
+on public.teams
+for select
+to anon
+using (active = true);
 
 drop policy if exists "players can insert own readiness reports" on public.readiness_reports;
 create policy "players can insert own readiness reports"
