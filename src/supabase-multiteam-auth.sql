@@ -235,6 +235,10 @@ grant execute on function public.player_team_roster(text) to anon, authenticated
 grant execute on function public.player_login(text, text, text) to anon, authenticated;
 grant execute on function public.rpe_request_header(text) to anon, authenticated;
 grant execute on function public.can_player_submit_report(uuid, text) to anon, authenticated;
+grant select on public.readiness_reports to anon;
+grant select on public.rpe_reports to anon;
+grant select on public.gps_records to anon;
+grant select on public.gps_sessions to anon;
 
 grant insert, update on public.readiness_reports to anon;
 grant insert, update on public.rpe_reports to anon;
@@ -247,6 +251,13 @@ to anon
 using (active = true);
 
 drop policy if exists "players can insert own readiness reports" on public.readiness_reports;
+drop policy if exists "players can select own readiness reports" on public.readiness_reports;
+create policy "players can select own readiness reports"
+on public.readiness_reports
+for select
+to anon
+using (public.can_player_submit_report(team_id, player_id));
+
 create policy "players can insert own readiness reports"
 on public.readiness_reports
 for insert
@@ -262,6 +273,13 @@ using (public.can_player_submit_report(team_id, player_id))
 with check (public.can_player_submit_report(team_id, player_id));
 
 drop policy if exists "players can insert own rpe reports" on public.rpe_reports;
+drop policy if exists "players can select own rpe reports" on public.rpe_reports;
+create policy "players can select own rpe reports"
+on public.rpe_reports
+for select
+to anon
+using (public.can_player_submit_report(team_id, player_id));
+
 create policy "players can insert own rpe reports"
 on public.rpe_reports
 for insert
@@ -275,6 +293,28 @@ for update
 to anon
 using (public.can_player_submit_report(team_id, player_id))
 with check (public.can_player_submit_report(team_id, player_id));
+
+drop policy if exists "players can select own gps records" on public.gps_records;
+create policy "players can select own gps records"
+on public.gps_records
+for select
+to anon
+using (public.can_player_submit_report(team_id, player_id));
+
+drop policy if exists "players can select own gps sessions" on public.gps_sessions;
+create policy "players can select own gps sessions"
+on public.gps_sessions
+for select
+to anon
+using (
+  exists (
+    select 1
+    from public.gps_records gr
+    where gr.team_id = gps_sessions.team_id
+      and gr.gps_session_id = gps_sessions.id
+      and public.can_player_submit_report(gr.team_id, gr.player_id)
+  )
+);
 
 -- IMPORTANT for real use:
 -- Remove old demo anon policies before entering real team data:

@@ -278,6 +278,37 @@ let coachSession = loadCoachSession();
 let state = isSupabaseMode() ? createEmptyState() : loadState();
 logRuntimeStartup();
 
+function clearProfessionalBrowserStorageInSupabaseMode() {
+  if (!isSupabaseMode()) return;
+  try {
+    localStorage.removeItem(STORE_KEY);
+    Object.keys(localStorage)
+      .filter((key) => key === CALENDAR_LOAD_PLANS_KEY || key.startsWith(`${CALENDAR_LOAD_PLANS_KEY}:`))
+      .forEach((key) => localStorage.removeItem(key));
+  } catch (error) {
+    console.warn("[Storage] Failed to clear local professional data in Supabase mode", error);
+  }
+}
+
+async function unregisterLegacyServiceWorkersAndCaches() {
+  const tasks = [];
+  if ("serviceWorker" in navigator) {
+    tasks.push(
+      navigator.serviceWorker.getRegistrations()
+        .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
+        .catch((error) => console.warn("[Cache] Failed to unregister service workers", error))
+    );
+  }
+  if ("caches" in window) {
+    tasks.push(
+      caches.keys()
+        .then((keys) => Promise.all(keys.map((key) => caches.delete(key))))
+        .catch((error) => console.warn("[Cache] Failed to clear Cache Storage", error))
+    );
+  }
+  await Promise.all(tasks);
+}
+
 function createDefaultGpsSessionSetup() {
   return {
     date: todayIso(),
@@ -319,10 +350,16 @@ async function startApplication() {
     render();
     return;
   }
+  clearProfessionalBrowserStorageInSupabaseMode();
+  await unregisterLegacyServiceWorkersAndCaches();
   await restoreCoachSession();
   if (shouldLoadSupabaseStateForCurrentRoute()) {
     await bootstrapSupabaseState();
     return;
+  }
+  if (isPlayerRoute(normalizePath(window.location.pathname)) && getPlayerSession()) {
+    const loaded = await bootstrapPlayerSessionState();
+    if (loaded) return;
   }
   render();
 }
@@ -446,6 +483,10 @@ function normalizePath(path) {
 
 function isCoachRoute(path) {
   return path === "/coach" || path.startsWith("/coach/");
+}
+
+function isPlayerRoute(path) {
+  return path === "/report" || path.startsWith("/report/");
 }
 
 function requiresCoachLogin() {
@@ -732,7 +773,7 @@ async function supabaseAuthRequest(path, options = {}) {
     "Content-Type": "application/json",
     ...(options.headers || {})
   };
-  const response = await fetch(`${baseUrl}/auth/v1/${path}`, { ...options, headers });
+  const response = await fetch(`${baseUrl}/auth/v1/${path}`, { ...options, headers, cache: "no-store" });
   const text = await response.text();
   if (!response.ok) {
     console.error("[Coach Auth] Supabase Auth request failed", {
@@ -1080,7 +1121,7 @@ function createSupabaseRestClient() {
         ...getSupabasePlayerAccessHeaders(),
         ...options.headers
       };
-      const response = await fetch(`${baseUrl}/rest/v1/${path}`, { ...options, headers });
+      const response = await fetch(`${baseUrl}/rest/v1/${path}`, { ...options, headers, cache: "no-store" });
       const text = await response.text();
       if (!response.ok) {
         console.error("[RPE Supabase] Request failed", {
@@ -1136,7 +1177,7 @@ function createEmptyState() {
     },
     demoDataset: null,
     players: [],
-    painAreas: [...DEFAULT_PAIN_AREAS],
+    painAreas: isSupabaseMode() ? [] : [...DEFAULT_PAIN_AREAS],
     settings: { ...DEFAULT_SETTINGS },
     readinessReports: [],
     reports: [],
@@ -1209,14 +1250,16 @@ function normalizeState(data) {
     },
     demoDataset: data.demoDataset || null,
     players,
-    painAreas: unique([...(Array.isArray(data.painAreas) ? data.painAreas : []), ...DEFAULT_PAIN_AREAS]),
+    painAreas: isSupabaseMode() ? unique(Array.isArray(data.painAreas) ? data.painAreas : []) : unique([...(Array.isArray(data.painAreas) ? data.painAreas : []), ...DEFAULT_PAIN_AREAS]),
     settings: { ...DEFAULT_SETTINGS, ...(data.settings || {}) },
     readinessReports: Array.isArray(data.readinessReports) ? data.readinessReports.map(normalizeReadinessReport) : [],
     reports,
     sessions: Array.isArray(data.sessions) ? data.sessions : [],
     gpsSessions: Array.isArray(data.gpsSessions) ? data.gpsSessions : [],
     gpsRecords: Array.isArray(data.gpsRecords) ? data.gpsRecords : [],
-    calendarLoadPlans: normalizeCalendarLoadPlans({ ...loadCalendarLoadPlans(), ...(data.calendarLoadPlans || {}) })
+    calendarLoadPlans: isSupabaseMode()
+      ? normalizeCalendarLoadPlans(data.calendarLoadPlans || {})
+      : normalizeCalendarLoadPlans({ ...loadCalendarLoadPlans(), ...(data.calendarLoadPlans || {}) })
   };
 }
 
@@ -1235,6 +1278,7 @@ function normalizeLoadPlanValue(value) {
 }
 
 function loadCalendarLoadPlans() {
+  if (isSupabaseMode()) return {};
   try {
     return normalizeCalendarLoadPlans(JSON.parse(localStorage.getItem(getCalendarLoadPlansKey()) || "{}"));
   } catch (error) {
@@ -1243,6 +1287,7 @@ function loadCalendarLoadPlans() {
 }
 
 function persistCalendarLoadPlans() {
+  if (isSupabaseMode()) return;
   try {
     localStorage.setItem(getCalendarLoadPlansKey(), JSON.stringify(state.calendarLoadPlans || {}));
   } catch (error) {
@@ -1255,6 +1300,10 @@ function getCalendarLoadPlansKey() {
 }
 
 function saveCalendarLoadPlan(date, gpsLoad, rpeLoad) {
+  if (isSupabaseMode()) {
+    showStorageWarning("תכנון עומסים עתידי לא נשמר מקומית במצב Supabase. יש להוסיף שמירת תכנון ל-Supabase לפני שימוש בפרודקשן.");
+    return;
+  }
   const plan = {
     gpsLoad: normalizeLoadPlanValue(gpsLoad),
     rpeLoad: normalizeLoadPlanValue(rpeLoad)
@@ -1316,7 +1365,7 @@ async function savePlayerReportToSupabase(report, type) {
 }
 
 async function persistPlayerReport(report, type) {
-  if (!isSupabaseMode() || coachSession) {
+  if (!isSupabaseMode()) {
     saveState();
     return true;
   }
@@ -1336,6 +1385,10 @@ async function persistPlayerReport(report, type) {
 }
 
 async function resetDemoState() {
+  if (isSupabaseMode()) {
+    showStorageWarning("טעינת נתוני דמו חסומה במצב Supabase production. נתוני דמו לא יוזרקו למסלול העבודה המקצועי.");
+    return;
+  }
   const demoState = createMonthDemoState();
   const replaceLegacyDemo = isPureLegacyDemoState(state);
   state = mergeMonthDemoState(state, demoState, replaceLegacyDemo);
@@ -1357,6 +1410,19 @@ async function resetDemoState() {
     } catch (error) {
       logSupabaseError("month-demo-reseed", error);
       supabaseStatus = "error";
+      updateStorageDiagnosticsError(error.message || String(error));
+      showStorageWarning(`שגיאת שמירה ל-Supabase: ${supabaseError}. הנתונים לא נשמרו מקומית כתחליף; מרענן נתונים מהשרת.`);
+      try {
+        state = await loadSupabaseState();
+        supabaseStatus = "connected";
+        render();
+      } catch (reloadError) {
+        logSupabaseError("reload-after-save-failure", reloadError);
+        supabaseFatalError = true;
+        updateStorageDiagnosticsError(reloadError.message || String(reloadError));
+        render();
+      }
+      return;
       updateStorageDiagnosticsError(error.message || String(error));
       showStorageWarning(`טעינת חודש הדמו ל-Supabase נכשלה: ${STORAGE_DIAGNOSTICS.lastSupabaseError}`);
     }
@@ -1451,6 +1517,59 @@ async function bootstrapSupabaseState() {
   }
 }
 
+async function bootstrapPlayerSessionState() {
+  const session = getPlayerSession();
+  if (!session?.playerId || !session?.teamId || !session?.pin) return false;
+  supabaseStatus = "loading";
+  supabaseFatalError = false;
+  renderLoadingScreen("טוען נתוני שחקן מ-Supabase...");
+  try {
+    await loadFreshPlayerPortalState(session);
+    supabaseStatus = "connected";
+    updateStorageDiagnosticsError("");
+    clearStorageWarning();
+    render();
+    return true;
+  } catch (error) {
+    logSupabaseError("player-session-refresh", error);
+    updateStorageDiagnosticsError(error.message || String(error));
+    localStorage.removeItem(PLAYER_SESSION_KEY);
+    state = createEmptyState();
+    uiState.playerLogin.teamsLoaded = false;
+    uiState.playerLogin.teams = [];
+    uiState.playerLogin.selectedTeamCode = "";
+    uiState.playerLogin.teamError = "לא ניתן לטעון את הנתונים מהשרת. בדוק את החיבור לאינטרנט ונסה שוב.";
+    supabaseStatus = "error";
+    renderPlayerLogin();
+    return true;
+  }
+}
+
+async function loadFreshPlayerPortalState(session) {
+  const pin = normalizePin(session.pin || "");
+  const teamCode = session.teamSlug || session.teamId;
+  if (!teamCode || !session.playerId || !pin) throw new Error("חסרים פרטי התחברות שחקן.");
+  await loadPlayerTeamByCodeV2(teamCode, { renderAfterLoad: false });
+  const player = await verifyPlayerLoginWithSupabase(teamCode, session.playerId, pin);
+  setLoggedPlayer(player, pin);
+  const teamId = player.teamId;
+  const playerId = player.id;
+  const [readinessRows, rpeRows, gpsRows, gpsSessionRows] = await Promise.all([
+    supabaseSelect("readiness_reports", `team_id=eq.${encodeURIComponent(teamId)}&player_id=eq.${encodeURIComponent(playerId)}&select=*&order=report_date.desc`),
+    supabaseSelect("rpe_reports", `team_id=eq.${encodeURIComponent(teamId)}&player_id=eq.${encodeURIComponent(playerId)}&select=*&order=report_date.desc`),
+    supabaseSelect("gps_records", `team_id=eq.${encodeURIComponent(teamId)}&player_id=eq.${encodeURIComponent(playerId)}&select=*`),
+    supabaseSelect("gps_sessions", `team_id=eq.${encodeURIComponent(teamId)}&select=*&order=session_date.desc`)
+  ]);
+  state = normalizeState({
+    ...state,
+    readinessReports: readinessRows.map(fromSupabaseReadinessReport),
+    reports: rpeRows.map(fromSupabaseRpeReport),
+    gpsRecords: gpsRows.map(fromSupabaseGpsRecord),
+    gpsSessions: gpsSessionRows.map(fromSupabaseGpsSession)
+  });
+  return player;
+}
+
 function queueSupabaseSave() {
   if (supabaseSaveTimer) window.clearTimeout(supabaseSaveTimer);
   supabaseSaveTimer = window.setTimeout(async () => {
@@ -1461,6 +1580,20 @@ function queueSupabaseSave() {
       clearStorageWarning();
     } catch (error) {
       logSupabaseError("save-state", error);
+      updateStorageDiagnosticsError(error.message || String(error));
+      showStorageWarning(`שגיאת שמירה ל-Supabase: ${supabaseError}. הנתונים לא נשמרו מקומית כתחליף; מרענן נתונים מהשרת.`);
+      try {
+        state = await loadSupabaseState();
+        supabaseStatus = "connected";
+        render();
+      } catch (reloadError) {
+        logSupabaseError("reload-after-save-failure", reloadError);
+        supabaseStatus = "error";
+        supabaseFatalError = true;
+        updateStorageDiagnosticsError(reloadError.message || String(reloadError));
+        render();
+      }
+      return;
       supabaseStatus = "error";
       updateStorageDiagnosticsError(error.message || "שגיאת שמירה ל-Supabase");
       showStorageWarning(`שגיאת שמירה ל-Supabase: ${supabaseError}. הנתונים נשמרו במסך הנוכחי אך לא נשמרו בענן.`);
@@ -1511,7 +1644,7 @@ async function loadSupabaseState() {
     seededAt: teamRows[0].created_at || new Date().toISOString(),
     team: teamRows[0] ? { id: teamRows[0].id, name: teamRows[0].name, slug: teamRows[0].slug, active: teamRows[0].active !== false } : null,
     players: players.map(fromSupabasePlayer),
-    painAreas: painRows.length ? painRows.map((row) => row.name) : [...DEFAULT_PAIN_AREAS],
+    painAreas: painRows.map((row) => row.name),
     settings: settingsRows.length ? fromSupabaseSettings(settingsRows[0]) : { ...DEFAULT_SETTINGS },
     readinessReports: readinessReports.map(fromSupabaseReadinessReport),
     reports: reports.map(fromSupabaseRpeReport),
@@ -1623,6 +1756,7 @@ async function ownerAdminApi(action, payload = {}) {
   if (!coachSession?.accessToken) throw new Error("נדרשת התחברות Owner.");
   const response = await fetch("/api/admin", {
     method: "POST",
+    cache: "no-store",
     headers: {
       Authorization: `Bearer ${coachSession.accessToken}`,
       "Content-Type": "application/json"
@@ -2432,7 +2566,7 @@ async function loadPlayerTeamByCode(teamCode) {
       position: normalizePlayerPosition(player.position || ""),
       pin: ""
     })) : [],
-    painAreas: Array.isArray(roster.painAreas) && roster.painAreas.length ? roster.painAreas : [...DEFAULT_PAIN_AREAS],
+    painAreas: Array.isArray(roster.painAreas) ? roster.painAreas : [],
     settings: roster.settings ? { ...DEFAULT_SETTINGS, ...roster.settings } : { ...DEFAULT_SETTINGS }
   });
   return state;
@@ -2517,6 +2651,8 @@ async function loadPlayerTeamsForLogin() {
   if (!isSupabaseMode() || uiState.playerLogin.teamsLoading || uiState.playerLogin.teamsLoaded) return;
   uiState.playerLogin.teamsLoading = true;
   uiState.playerLogin.teamError = "";
+  uiState.playerLogin.teams = [];
+  state = createEmptyState();
   renderPlayerLogin();
   try {
     const payload = await supabaseSelect("teams", "active=eq.true&select=id,name,slug,active&order=name.asc");
@@ -2543,6 +2679,8 @@ async function loadPlayerTeamsForLogin() {
     }
   } catch (error) {
     console.error("[Player Login] failed to load teams", error);
+    uiState.playerLogin.teamsLoaded = true;
+    uiState.playerLogin.teams = [];
     uiState.playerLogin.teamError = error.message || "טעינת רשימת הקבוצות נכשלה. ודא שה-SQL המעודכן הורץ בסופאבייס.";
   } finally {
     uiState.playerLogin.teamsLoading = false;
@@ -2556,6 +2694,7 @@ async function loadPlayerTeamByCodeV2(teamCode, options = {}) {
   uiState.playerLogin.rosterLoading = true;
   uiState.playerLogin.rosterError = "";
   uiState.playerLogin.selectedTeamCode = code;
+  if (isSupabaseMode()) state = createEmptyState();
   if (options.renderAfterLoad !== false) renderPlayerLogin();
   try {
     const payload = await supabaseRpc("player_team_roster", { p_team_code: code });
@@ -2575,7 +2714,7 @@ async function loadPlayerTeamByCodeV2(teamCode, options = {}) {
         position: normalizePlayerPosition(player.position || ""),
         pin: ""
       })) : [],
-      painAreas: Array.isArray(roster.painAreas) && roster.painAreas.length ? roster.painAreas : [...DEFAULT_PAIN_AREAS],
+      painAreas: Array.isArray(roster.painAreas) ? roster.painAreas : [],
       settings: roster.settings ? { ...DEFAULT_SETTINGS, ...roster.settings } : { ...DEFAULT_SETTINGS }
     });
     uiState.playerLogin.selectedTeamCode = team.slug || code;
@@ -2716,6 +2855,17 @@ function renderPlayerLogin() {
           ? await verifyPlayerLoginWithSupabase(selectedTeamCode, playerId, pin)
           : state.players.find((item) => item.id === playerId && item.active && item.pin === pin);
         if (!player) throw new Error("שם או PIN אינם נכונים.");
+        if (isSupabaseMode() && !coachSession) {
+          setLoggedPlayer(player, pin);
+          await loadFreshPlayerPortalState({
+            playerId: player.id,
+            teamId: player.teamId,
+            teamSlug: selectedTeamCode,
+            pin
+          });
+          navigate("/report");
+          return;
+        }
         if (!state.players.some((item) => item.id === player.id)) {
           state.players.unshift(player);
         }
@@ -3460,10 +3610,17 @@ function renderReadinessForm(player) {
         medicalLimitation: String(data.get("medicalLimitation")) === "true",
         comments: String(data.get("comments") || "").trim()
       };
-      state.readinessReports = state.readinessReports.filter((item) => !(item.playerId === player.id && item.date === date));
-      state.readinessReports.unshift(report);
-      const saved = await persistPlayerReport(report, "readiness");
-      if (!saved) return;
+      if (isSupabaseMode()) {
+        const saved = await persistPlayerReport(report, "readiness");
+        if (!saved) return;
+        state.readinessReports = state.readinessReports.filter((item) => !(item.playerId === player.id && item.date === date));
+        state.readinessReports.unshift(report);
+      } else {
+        state.readinessReports = state.readinessReports.filter((item) => !(item.playerId === player.id && item.date === date));
+        state.readinessReports.unshift(report);
+        const saved = await persistPlayerReport(report, "readiness");
+        if (!saved) return;
+      }
       renderPlayerSuccess(player, "דוח המוכנות נשלח בהצלחה", "הצוות קיבל את תמונת המצב שלך לפני האימון.");
     });
   });
@@ -3541,10 +3698,17 @@ function renderPostReportForm(player) {
         bodyWeightAfter: optionalNumberFromForm(data, "bodyWeightAfter"),
         comments: String(data.get("comments") || "").trim()
       };
-      state.reports = state.reports.filter((item) => !(item.playerId === player.id && item.date === date));
-      state.reports.unshift(report);
-      const saved = await persistPlayerReport(report, "rpe");
-      if (!saved) return;
+      if (isSupabaseMode()) {
+        const saved = await persistPlayerReport(report, "rpe");
+        if (!saved) return;
+        state.reports = state.reports.filter((item) => !(item.playerId === player.id && item.date === date));
+        state.reports.unshift(report);
+      } else {
+        state.reports = state.reports.filter((item) => !(item.playerId === player.id && item.date === date));
+        state.reports.unshift(report);
+        const saved = await persistPlayerReport(report, "rpe");
+        if (!saved) return;
+      }
       renderPlayerSuccess(player, "דוח ה-RPE נשלח בהצלחה", "הצוות יראה את העומס, העייפות וההידרציה שלך.");
     });
   });
@@ -9193,7 +9357,7 @@ function renderSettingsPage() {
         <h2>הגדרות</h2>
         <p>שחקנים, PIN אישי, אזורי כאב וספי התראה</p>
       </div>
-      ${canManage ? `<button class="btn primary" type="button" id="reseedMonthDemo">טעינה / רענון חודש דמו</button>` : ""}
+      ${canManage && !isSupabaseMode() ? `<button class="btn primary" type="button" id="reseedMonthDemo">טעינה / רענון חודש דמו</button>` : ""}
     </div>
 
     <section class="surface demo-dataset-panel">
@@ -10553,7 +10717,9 @@ function getLoggedPlayer() {
   const session = getPlayerSession();
   if (!session?.playerId) return null;
   if (session.teamId && session.teamId !== getActiveTeamId()) return null;
-  return state.players.find((player) => player.id === session.playerId && player.active) || {
+  const player = state.players.find((item) => item.id === session.playerId && item.active) || null;
+  if (player || isSupabaseMode()) return player;
+  return {
     id: session.playerId,
     teamId: session.teamId || getActiveTeamId(),
     name: session.playerName || "שחקן",

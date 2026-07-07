@@ -10,9 +10,11 @@ const sql = await readFile(path.join(rootDir, "src", "supabase-multiteam-auth.sq
 const bootstrapSql = await readFile(path.join(rootDir, "src", "supabase-real-use-bootstrap.sql"), "utf8");
 const ownerAdminSql = await readFile(path.join(rootDir, "src", "supabase-owner-admin.sql"), "utf8");
 const publicTeamListingSql = await readFile(path.join(rootDir, "src", "supabase-public-team-listing.sql"), "utf8");
+const playerPortalSelectSql = await readFile(path.join(rootDir, "src", "supabase-player-portal-select.sql"), "utf8");
 const adminApi = await readFile(path.join(rootDir, "api", "admin.js"), "utf8");
 const schema = await readFile(path.join(rootDir, "src", "supabase-schema.sql"), "utf8");
 const seedAuthUsers = await readFile(path.join(rootDir, "scripts", "seed-auth-users.mjs"), "utf8");
+const vercelConfig = await readFile(path.join(rootDir, "vercel.json"), "utf8");
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -27,6 +29,10 @@ assert(app.includes("player_team_roster"), "player team roster RPC is missing");
 assert(app.includes('supabaseSelect("teams", "active=eq.true&select=id,name,slug,active&order=name.asc")'), "player login must load active teams directly from the teams table");
 assert(app.includes("player_login"), "player login RPC is missing");
 assert(app.includes("x-rpe-team-id"), "player team RLS header is missing");
+assert(app.includes("clearProfessionalBrowserStorageInSupabaseMode"), "Supabase mode must clear old local professional data");
+assert(app.includes("unregisterLegacyServiceWorkersAndCaches"), "legacy service worker/cache cleanup is missing");
+assert(app.includes("loadFreshPlayerPortalState"), "player session must reload player data from Supabase");
+assert(app.includes('cache: "no-store"'), "Supabase requests must opt out of browser HTTP cache");
 assert(app.includes("team_id=eq.${encodeURIComponent(teamId)}"), "Supabase loading is not visibly team-scoped");
 assert(app.includes("team_id: getActiveTeamId()"), "Supabase writes are not visibly team-scoped");
 
@@ -41,6 +47,9 @@ assert(publicTeamListingSql.includes("grant select on public.teams to anon"), "a
 assert(sql.includes("create or replace function public.player_login"), "player login RPC migration missing");
 assert(sql.includes("public.can_player_submit_report"), "player report RLS helper missing");
 assert(sql.includes("for insert") && sql.includes("for update"), "player report insert/update policies missing");
+assert(sql.includes('create policy "players can select own readiness reports"'), "player readiness select policy missing from multiteam migration");
+assert(sql.includes('create policy "players can select own rpe reports"'), "player RPE select policy missing from multiteam migration");
+assert(sql.includes('create policy "players can select own gps records"'), "player GPS record select policy missing from multiteam migration");
 assert(sql.includes("training_match"), "GPS friendly match type migration missing");
 
 assert(bootstrapSql.includes("create or replace function public.player_team_roster"), "real-use bootstrap is missing player roster RPC");
@@ -48,6 +57,10 @@ assert(bootstrapSql.includes("create or replace function public.player_team_list
 assert(bootstrapSql.includes('create policy "public can select active teams"'), "public active team select policy missing from real-use bootstrap");
 assert(bootstrapSql.includes("grant select on public.teams to anon"), "anon team select grant missing from real-use bootstrap");
 assert(bootstrapSql.includes("create or replace function public.player_login"), "real-use bootstrap is missing player login RPC");
+assert(bootstrapSql.includes('create policy "players can select own readiness reports"'), "player readiness select policy missing from real-use bootstrap");
+assert(bootstrapSql.includes('create policy "players can select own gps sessions"'), "player GPS session select policy missing from real-use bootstrap");
+assert(playerPortalSelectSql.includes('create policy "players can select own readiness reports"'), "standalone player portal select migration missing readiness policy");
+assert(playerPortalSelectSql.includes('create policy "players can select own gps records"'), "standalone player portal select migration missing GPS record policy");
 assert(bootstrapSql.includes("coach.team1@example.com"), "Team 1 demo coach email missing from bootstrap");
 assert(bootstrapSql.includes("coach.team2@example.com"), "Team 2 demo coach email missing from bootstrap");
 assert(bootstrapSql.includes("CoachTeam1!2026"), "Team 1 demo coach password documentation missing from bootstrap");
@@ -73,5 +86,6 @@ assert(ownerAdminSql.includes("mark2fitness4max@gmail.com"), "real owner bootstr
 assert(adminApi.includes("SUPABASE_SERVICE_ROLE_KEY"), "admin API must use server-side service role key");
 assert(adminApi.includes("createCoach") && adminApi.includes("resetCoachPassword"), "admin API coach actions are missing");
 assert(seedAuthUsers.includes("mark2fitness4max@gmail.com"), "auth seed script must create the real owner user");
+assert(vercelConfig.includes('"Cache-Control"') && vercelConfig.includes("no-store"), "Vercel must serve critical app files without stale cache");
 
 console.log("TEAM_ISOLATION_CHECK_OK");

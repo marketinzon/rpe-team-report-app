@@ -131,7 +131,7 @@ const server = createServer(async (req, res) => {
     const data = await readFile(filePath);
     res.writeHead(200, {
       "Content-Type": contentTypes[ext] || "application/octet-stream",
-      "Cache-Control": ext === ".html" ? "no-store" : "public, max-age=3600"
+      "Cache-Control": "no-store"
     });
     res.end(data);
   } catch (error) {

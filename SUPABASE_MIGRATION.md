@@ -15,6 +15,7 @@ Run only these SQL files, in this exact order:
 2. Create/confirm the Supabase Auth users listed below, or run `npm run seed:auth-users` if local `.env` contains `SUPABASE_SERVICE_ROLE_KEY`.
 3. `src/supabase-real-use-bootstrap.sql`
 4. `src/supabase-owner-admin.sql`
+5. `src/supabase-player-portal-select.sql` if your project was already migrated before this file existed. New runs of `src/supabase-real-use-bootstrap.sql` already include these player read policies.
 
 Do not run `src/supabase-multiteam-auth.sql` for the prepared Team 1 / Team 2 setup. It is kept as an optional/reference migration only. `src/supabase-real-use-bootstrap.sql` already includes the multi-team RPCs, player login RPCs, player report policies, demo-policy cleanup, and initial two-team data.
 
@@ -611,3 +612,10 @@ Runtime storage status is visible in the app:
 - `Supabase connected`: reads/writes are configured and the latest save succeeded.
 - `Supabase error`: Supabase read/write failed; open the browser console for method, path, status, and response body.
 - `Local fallback`: `RPE_STORAGE_DRIVER=local`; data is stored only in browser `localStorage`.
+
+Production data source rule:
+
+- When `RPE_STORAGE_DRIVER=supabase`, professional data is never loaded from browser `localStorage` as a fallback.
+- Player team lists are queried from `public.teams` on load.
+- Player sessions may remain in `localStorage` only as authentication state; roster, reports and GPS are reloaded from Supabase.
+- Critical HTML/JS/env assets are served with `Cache-Control: no-store`, and the app unregisters legacy service workers and clears Cache Storage on startup.
