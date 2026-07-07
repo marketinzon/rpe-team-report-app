@@ -357,6 +357,16 @@ function render() {
     return;
   }
 
+  const coachRouteAliases = {
+    "/gps": "/coach/gps",
+    "/calendar": "/coach/calendar",
+    "/reports": "/coach/reports"
+  };
+  if (coachRouteAliases[path]) {
+    navigate(coachRouteAliases[path], true);
+    return;
+  }
+
   if (path === "/report") {
     renderReportPage();
     return;

@@ -27,6 +27,9 @@
     { "source": "/report", "destination": "/index.html" },
     { "source": "/report/:path*", "destination": "/index.html" },
     { "source": "/coach", "destination": "/index.html" },
-    { "source": "/coach/:path*", "destination": "/index.html" }
+    { "source": "/coach/:path*", "destination": "/index.html" },
+    { "source": "/gps", "destination": "/index.html" },
+    { "source": "/calendar", "destination": "/index.html" },
+    { "source": "/reports", "destination": "/index.html" }
   ]
 }

@@ -6,6 +6,23 @@ import path from "node:path";
 const __filename = fileURLToPath(import.meta.url);
 const rootDir = path.resolve(path.dirname(__filename), "..");
 const distDir = path.join(rootDir, "dist");
+const spaRoutes = [
+  "report",
+  "report/pre",
+  "report/post",
+  "coach",
+  "coach/login",
+  "coach/admin",
+  "coach/analytics",
+  "coach/players",
+  "coach/reports",
+  "coach/gps",
+  "coach/calendar",
+  "coach/settings",
+  "gps",
+  "calendar",
+  "reports"
+];
 
 function parseEnvValue(value) {
   let next = value.trim();
@@ -79,6 +96,14 @@ async function writeRuntimeEnv(config) {
   await writeFile(path.join(distDir, "assets", "env.js"), output, "utf8");
 }
 
+async function writeSpaRouteFiles(indexHtml) {
+  await Promise.all(spaRoutes.map(async (route) => {
+    const routeDir = path.join(distDir, route);
+    await mkdir(routeDir, { recursive: true });
+    await writeFile(path.join(routeDir, "index.html"), indexHtml, "utf8");
+  }));
+}
+
 async function build() {
   await loadDotEnv();
   const config = readPublicConfig();
@@ -88,6 +113,7 @@ async function build() {
 
   const indexHtml = await readFile(path.join(rootDir, "index.html"), "utf8");
   await writeFile(path.join(distDir, "index.html"), indexHtml, "utf8");
+  await writeSpaRouteFiles(indexHtml);
   await writeRuntimeEnv(config);
 
   console.log(`Built production app in ${path.relative(rootDir, distDir)}`);

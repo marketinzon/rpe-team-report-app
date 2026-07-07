@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { handleAdminApiRequest } from "./api/admin.js";
@@ -87,7 +87,14 @@ function resolveRequestPath(requestUrl) {
   const cleanPath = decodeURIComponent(url.pathname).replace(/^\/+/, "");
   const requested = path.resolve(__dirname, cleanPath || "index.html");
   if (!requested.startsWith(__dirname)) return path.join(__dirname, "index.html");
-  if (existsSync(requested) && !requested.endsWith(path.sep)) return requested;
+  if (existsSync(requested)) {
+    const requestStat = statSync(requested);
+    if (requestStat.isFile()) return requested;
+    if (requestStat.isDirectory()) {
+      const directoryIndex = path.join(requested, "index.html");
+      if (existsSync(directoryIndex)) return directoryIndex;
+    }
+  }
   return path.join(__dirname, "index.html");
 }
 

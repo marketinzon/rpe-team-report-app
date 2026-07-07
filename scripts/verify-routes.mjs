@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -17,6 +17,9 @@ const routes = [
   "/report/post",
   "/coach/login",
   "/coach",
+  "/gps",
+  "/calendar",
+  "/reports",
   "/coach/analytics",
   "/coach/players",
   "/coach/reports",
@@ -26,6 +29,16 @@ const routes = [
   "/coach/sessions",
   "/coach/admin",
   "/coach/settings"
+];
+
+const staticRouteFiles = [
+  "report/index.html",
+  "coach/index.html",
+  "coach/login/index.html",
+  "coach/admin/index.html",
+  "gps/index.html",
+  "calendar/index.html",
+  "reports/index.html"
 ];
 
 const contentTypes = {
@@ -38,8 +51,13 @@ function resolveRequest(requestUrl) {
   const url = new URL(requestUrl || "/", baseUrl);
   const cleanPath = decodeURIComponent(url.pathname).replace(/^\/+/, "");
   const requested = path.resolve(distDir, cleanPath || "index.html");
-  if (requested.startsWith(distDir) && existsSync(requested) && !requested.endsWith(path.sep)) {
-    return requested;
+  if (requested.startsWith(distDir) && existsSync(requested)) {
+    const requestStat = statSync(requested);
+    if (requestStat.isFile()) return requested;
+    if (requestStat.isDirectory()) {
+      const directoryIndex = path.join(requested, "index.html");
+      if (existsSync(directoryIndex)) return directoryIndex;
+    }
   }
   return path.join(distDir, "index.html");
 }
@@ -59,6 +77,12 @@ const server = createServer(async (req, res) => {
 
 if (!existsSync(path.join(distDir, "index.html"))) {
   throw new Error("dist/index.html is missing. Run npm run build first.");
+}
+
+for (const file of staticRouteFiles) {
+  if (!existsSync(path.join(distDir, file))) {
+    throw new Error(`dist/${file} is missing. SPA route files were not generated.`);
+  }
 }
 
 await new Promise((resolve) => server.listen(port, "127.0.0.1", resolve));
