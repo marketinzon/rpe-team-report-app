@@ -62,14 +62,16 @@ function booleanEnv(value, fallback) {
 async function createRuntimeEnvScript() {
   const values = localDotEnvValues;
   const storageDriver = String(envValue(values, "RPE_STORAGE_DRIVER", "local")).toLowerCase();
+  const selectedStorageDriver = storageDriver === "supabase" ? "supabase" : "local";
+  const isSupabase = selectedStorageDriver === "supabase";
   const config = {
     appName: envValue(values, "RPE_APP_NAME", "דוח RPE קבוצתי"),
     environment: envValue(values, "RPE_APP_ENV", "development"),
     appVersion: envValue(values, "RPE_APP_VERSION", "local"),
-    storageDriver: storageDriver === "supabase" ? "supabase" : "local",
-    seedDemoData: booleanEnv(envValue(values, "RPE_SEED_DEMO_DATA", "true"), true),
-    teamId: envValue(values, "RPE_TEAM_ID", "00000000-0000-4000-8000-000000000001"),
-    teamName: envValue(values, "RPE_TEAM_NAME", "קבוצת דמו"),
+    storageDriver: selectedStorageDriver,
+    seedDemoData: isSupabase ? false : booleanEnv(envValue(values, "RPE_SEED_DEMO_DATA", "true"), true),
+    teamId: isSupabase ? "" : envValue(values, "RPE_TEAM_ID", "00000000-0000-4000-8000-000000000001"),
+    teamName: isSupabase ? "" : envValue(values, "RPE_TEAM_NAME", "קבוצת דמו"),
     supabaseUrl: envValue(values, "SUPABASE_URL") || envValue(values, "NEXT_PUBLIC_SUPABASE_URL"),
     supabasePublishableKey:
       envValue(values, "SUPABASE_PUBLISHABLE_KEY") ||
@@ -79,6 +81,11 @@ async function createRuntimeEnvScript() {
     supabaseSchema: envValue(values, "SUPABASE_SCHEMA", "public"),
     supabaseTablePrefix: envValue(values, "SUPABASE_TABLE_PREFIX", "")
   };
+  if (config.storageDriver === "supabase") {
+    config.seedDemoData = false;
+    config.teamId = "";
+    config.teamName = "";
+  }
   return `window.RPE_ENV_LOADED_AT = ${JSON.stringify(new Date().toISOString())};\nwindow.RPE_ENV = Object.freeze(${JSON.stringify(config, null, 2)});\n`;
 }
 

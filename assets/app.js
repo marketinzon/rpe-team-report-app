@@ -462,12 +462,12 @@ function shouldLoadSupabaseStateForCurrentRoute() {
 
 function getActiveTeamId() {
   const playerTeam = getPlayerTeamContext();
-  return coachSession?.teamId || playerTeam?.teamId || APP_CONFIG.teamId;
+  return coachSession?.teamId || playerTeam?.teamId || (isSupabaseMode() ? "" : APP_CONFIG.teamId);
 }
 
 function getActiveTeamName() {
   const playerTeam = getPlayerTeamContext();
-  return coachSession?.teamName || playerTeam?.teamName || APP_CONFIG.teamName;
+  return coachSession?.teamName || playerTeam?.teamName || (isSupabaseMode() ? "" : APP_CONFIG.teamName);
 }
 
 function getActiveTeamSlug() {
@@ -523,6 +523,10 @@ function getPlayerTeamContext() {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed || !parsed.teamId) return null;
+    if (isSupabaseMode() && parsed.teamId === DEFAULT_DEMO_TEAM_ID) {
+      localStorage.removeItem(PLAYER_TEAM_KEY);
+      return null;
+    }
     return parsed;
   } catch (error) {
     return null;
@@ -535,10 +539,12 @@ function setPlayerTeamContext(context) {
       localStorage.removeItem(PLAYER_TEAM_KEY);
       return;
     }
+    const fallbackName = isSupabaseMode() ? "" : APP_CONFIG.teamName;
+    const teamName = context.teamName || fallbackName;
     localStorage.setItem(PLAYER_TEAM_KEY, JSON.stringify({
       teamId: context.teamId,
-      teamName: context.teamName || APP_CONFIG.teamName,
-      teamSlug: context.teamSlug || slugify(context.teamName || APP_CONFIG.teamName)
+      teamName,
+      teamSlug: context.teamSlug || slugify(teamName)
     }));
   } catch (error) {
     console.warn("[Player Team] Failed to persist team context", error);
@@ -1015,19 +1021,26 @@ function updateStorageDiagnosticsError(message) {
 function getRuntimeConfig() {
   const env = RAW_RPE_ENV || {};
   const storageDriver = String(env.storageDriver || "local").toLowerCase() === "supabase" ? "supabase" : "local";
-  return {
+  const isSupabase = storageDriver === "supabase";
+  const config = {
     appName: String(env.appName || "דוח RPE קבוצתי"),
     environment: String(env.environment || "development"),
     appVersion: String(env.appVersion || "local"),
     storageDriver,
-    seedDemoData: env.seedDemoData !== false,
-    teamId: String(env.teamId || "00000000-0000-4000-8000-000000000001"),
-    teamName: String(env.teamName || "קבוצת דמו"),
+    seedDemoData: isSupabase ? false : env.seedDemoData !== false,
+    teamId: isSupabase ? "" : String(env.teamId || DEFAULT_DEMO_TEAM_ID),
+    teamName: isSupabase ? "" : String(env.teamName || "קבוצת דמו"),
     supabaseUrl: String(env.supabaseUrl || ""),
     supabasePublishableKey: String(env.supabasePublishableKey || ""),
     supabaseSchema: String(env.supabaseSchema || "public"),
     supabaseTablePrefix: String(env.supabaseTablePrefix || "")
   };
+  if (isSupabase) {
+    config.seedDemoData = false;
+    config.teamId = "";
+    config.teamName = "";
+  }
+  return config;
 }
 
 function isSupabaseMode() {
@@ -1458,6 +1471,7 @@ function queueSupabaseSave() {
 async function loadSupabaseState() {
   ensureSupabaseConfig();
   const teamId = getActiveTeamId();
+  if (!teamId) throw new Error("Supabase mode requires an active team from coach login or player team selection.");
   console.info("[RPE Runtime] first test query to teams", { teamId });
   const teamRows = await supabaseSelect("teams", `id=eq.${encodeURIComponent(teamId)}&select=*`);
   console.info("[RPE Runtime] first test query to teams completed", { rows: teamRows.length });
@@ -1515,6 +1529,7 @@ function shouldSeedDemoForActiveTeam(teamRows, playerRows) {
 async function saveSupabaseState(nextState) {
   ensureSupabaseConfig();
   const teamId = getActiveTeamId();
+  if (!teamId) throw new Error("Supabase save requires an active team.");
   await supabaseUpsert("teams", [{
     id: teamId,
     name: getActiveTeamName(),
@@ -1747,7 +1762,9 @@ async function testSupabaseConnection() {
     return { ok: false, message };
   }
   try {
-    const rows = await supabaseSelect("teams", `id=eq.${encodeURIComponent(getActiveTeamId())}&select=id,name`);
+    const teamId = getActiveTeamId();
+    const query = teamId ? `id=eq.${encodeURIComponent(teamId)}&select=id,name` : "active=eq.true&select=id,name&limit=5";
+    const rows = await supabaseSelect("teams", query);
     supabaseStatus = "connected";
     updateStorageDiagnosticsError("");
     clearStorageWarning();
@@ -2515,7 +2532,8 @@ async function loadPlayerTeamsForLogin() {
     uiState.playerLogin.teamsLoaded = true;
     const savedTeam = getPlayerTeamContext();
     const queryTeam = new URLSearchParams(window.location.search).get("team") || "";
-    const preferredCode = uiState.playerLogin.selectedTeamCode || queryTeam || savedTeam?.teamSlug || "";
+    const savedTeamCode = savedTeam?.teamId === DEFAULT_DEMO_TEAM_ID ? "" : savedTeam?.teamSlug || "";
+    const preferredCode = uiState.playerLogin.selectedTeamCode || queryTeam || savedTeamCode || "";
     const preferredTeam = teams.find((team) => team.slug === preferredCode || team.id === preferredCode);
     if (preferredTeam && !uiState.playerLogin.selectedTeamCode) {
       uiState.playerLogin.selectedTeamCode = preferredTeam.slug || preferredTeam.id;

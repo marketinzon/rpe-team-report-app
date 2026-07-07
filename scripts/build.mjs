@@ -65,14 +65,16 @@ function booleanEnv(value, fallback) {
 
 function readPublicConfig() {
   const storageDriver = String(process.env.RPE_STORAGE_DRIVER || "local").toLowerCase();
+  const selectedStorageDriver = storageDriver === "supabase" ? "supabase" : "local";
+  const isSupabase = selectedStorageDriver === "supabase";
   const config = {
     appName: process.env.RPE_APP_NAME || "דוח RPE קבוצתי",
     environment: process.env.RPE_APP_ENV || process.env.VERCEL_ENV || "production",
     appVersion: process.env.RPE_APP_VERSION || (process.env.VERCEL_GIT_COMMIT_SHA || "").slice(0, 12) || "local",
-    storageDriver: storageDriver === "supabase" ? "supabase" : "local",
-    seedDemoData: booleanEnv(process.env.RPE_SEED_DEMO_DATA, true),
-    teamId: process.env.RPE_TEAM_ID || "00000000-0000-4000-8000-000000000001",
-    teamName: process.env.RPE_TEAM_NAME || "קבוצת דמו",
+    storageDriver: selectedStorageDriver,
+    seedDemoData: isSupabase ? false : booleanEnv(process.env.RPE_SEED_DEMO_DATA, true),
+    teamId: isSupabase ? "" : process.env.RPE_TEAM_ID || "00000000-0000-4000-8000-000000000001",
+    teamName: isSupabase ? "" : process.env.RPE_TEAM_NAME || "קבוצת דמו",
     supabaseUrl: process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "",
     supabasePublishableKey:
       process.env.SUPABASE_PUBLISHABLE_KEY ||
@@ -86,6 +88,12 @@ function readPublicConfig() {
 
   if (config.storageDriver === "supabase" && (!config.supabaseUrl || !config.supabasePublishableKey)) {
     throw new Error("RPE_STORAGE_DRIVER=supabase requires SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY.");
+  }
+
+  if (config.storageDriver === "supabase") {
+    config.seedDemoData = false;
+    config.teamId = "";
+    config.teamName = "";
   }
 
   return config;
