@@ -497,22 +497,47 @@ function shouldLoadSupabaseStateForCurrentRoute() {
   if (!isSupabaseMode()) return false;
   const path = normalizePath(window.location.pathname);
   if (isCoachRoute(path)) return Boolean(coachSession);
-  if (path === "/report" || path.startsWith("/report/")) return Boolean(coachSession);
   return false;
+}
+
+function isPlayerPortalRoute() {
+  return isPlayerRoute(normalizePath(window.location.pathname));
+}
+
+function getStoredPlayerSessionContext() {
+  try {
+    const raw = localStorage.getItem(PLAYER_SESSION_KEY);
+    if (!raw || !raw.trim().startsWith("{")) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && parsed.playerId ? parsed : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function shouldUsePlayerTeamContext(playerTeam) {
+  if (!isSupabaseMode() || !isPlayerPortalRoute() || !playerTeam?.teamId) return false;
+  const selectedCode = uiState?.playerLogin?.selectedTeamCode || "";
+  const storedPlayerSession = getStoredPlayerSessionContext();
+  if (storedPlayerSession?.teamId && storedPlayerSession.teamId === playerTeam.teamId) return true;
+  return Boolean(selectedCode && (selectedCode === playerTeam.teamId || selectedCode === playerTeam.teamSlug));
 }
 
 function getActiveTeamId() {
   const playerTeam = getPlayerTeamContext();
+  if (isSupabaseMode() && isPlayerPortalRoute()) return shouldUsePlayerTeamContext(playerTeam) ? playerTeam.teamId : "";
   return coachSession?.teamId || playerTeam?.teamId || (isSupabaseMode() ? "" : APP_CONFIG.teamId);
 }
 
 function getActiveTeamName() {
   const playerTeam = getPlayerTeamContext();
+  if (isSupabaseMode() && isPlayerPortalRoute()) return shouldUsePlayerTeamContext(playerTeam) ? playerTeam.teamName || "" : "";
   return coachSession?.teamName || playerTeam?.teamName || (isSupabaseMode() ? "" : APP_CONFIG.teamName);
 }
 
 function getActiveTeamSlug() {
   const playerTeam = getPlayerTeamContext();
+  if (isSupabaseMode() && isPlayerPortalRoute()) return shouldUsePlayerTeamContext(playerTeam) ? playerTeam.teamSlug || "" : "";
   return coachSession?.teamSlug || playerTeam?.teamSlug || slugify(getActiveTeamName());
 }
 
@@ -1102,6 +1127,49 @@ function logRuntimeStartup() {
   });
 }
 
+function isRuntimeDebugEnabled() {
+  try {
+    return APP_CONFIG.environment !== "production"
+      || new URLSearchParams(window.location.search).has("debug")
+      || localStorage.getItem("rpe-debug") === "1";
+  } catch (error) {
+    return APP_CONFIG.environment !== "production";
+  }
+}
+
+function debugPlayerLogin(stage, details = {}) {
+  if (!isRuntimeDebugEnabled()) return;
+  console.info("[RPE Player Login Debug]", {
+    stage,
+    ...details
+  });
+}
+
+async function debugLogPlayerTeamCounts(teams) {
+  if (!isRuntimeDebugEnabled() || !Array.isArray(teams) || !teams.length) return;
+  const counts = await Promise.all(teams.map(async (team) => {
+    try {
+      const payload = await supabaseRpc("player_team_roster", { p_team_code: team.slug || team.id }, { authMode: "player" });
+      const roster = normalizeRpcPayload(payload);
+      return {
+        id: team.id,
+        name: team.name,
+        players: Array.isArray(roster.players) ? roster.players.length : 0
+      };
+    } catch (error) {
+      return {
+        id: team.id,
+        name: team.name,
+        players: null,
+        error: error.message || String(error)
+      };
+    }
+  }));
+  debugPlayerLogin("team-player-counts", {
+    counts
+  });
+}
+
 function createSupabaseRestClient() {
   ensureSupabaseConfig();
   const baseUrl = APP_CONFIG.supabaseUrl.replace(/\/$/, "");
@@ -1115,13 +1183,14 @@ function createSupabaseRestClient() {
   return {
     async request(path, options = {}) {
       const method = options.method || "GET";
+      const { authMode, _retriedAuth, ...fetchOptions } = options;
       const headers = {
         apikey: APP_CONFIG.supabasePublishableKey,
-        Authorization: getSupabaseAuthorizationHeader(),
-        ...getSupabasePlayerAccessHeaders(),
+        Authorization: getSupabaseAuthorizationHeader(authMode),
+        ...getSupabasePlayerAccessHeaders(authMode),
         ...options.headers
       };
-      const response = await fetch(`${baseUrl}/rest/v1/${path}`, { ...options, headers, cache: "no-store" });
+      const response = await fetch(`${baseUrl}/rest/v1/${path}`, { ...fetchOptions, headers, cache: "no-store" });
       const text = await response.text();
       if (!response.ok) {
         console.error("[RPE Supabase] Request failed", {
@@ -1139,12 +1208,19 @@ function createSupabaseRestClient() {
   };
 }
 
-function getSupabaseAuthorizationHeader() {
-  return `Bearer ${coachSession?.accessToken || APP_CONFIG.supabasePublishableKey}`;
+function isPlayerPortalSupabaseRequest(authMode = "auto") {
+  if (authMode === "player") return true;
+  if (authMode === "coach") return false;
+  return isPlayerPortalRoute();
 }
 
-function getSupabasePlayerAccessHeaders() {
-  if (coachSession) return {};
+function getSupabaseAuthorizationHeader(authMode = "auto") {
+  const usePlayerContext = isPlayerPortalSupabaseRequest(authMode);
+  return `Bearer ${!usePlayerContext && coachSession?.accessToken ? coachSession.accessToken : APP_CONFIG.supabasePublishableKey}`;
+}
+
+function getSupabasePlayerAccessHeaders(authMode = "auto") {
+  if (!isPlayerPortalSupabaseRequest(authMode)) return {};
   const session = getPlayerSession();
   if (!session?.playerId || !session?.teamId || !session?.pin) return {};
   return {
@@ -1704,8 +1780,8 @@ function ensureSupabaseConfig() {
   }
 }
 
-async function supabaseSelect(table, query) {
-  return supabaseRequest(`${APP_CONFIG.supabaseTablePrefix}${table}?${query}`, { method: "GET" });
+async function supabaseSelect(table, query, options = {}) {
+  return supabaseRequest(`${APP_CONFIG.supabaseTablePrefix}${table}?${query}`, { method: "GET", ...options });
 }
 
 async function supabaseUpsert(table, rows, onConflict) {
@@ -1720,13 +1796,14 @@ async function supabaseUpsert(table, rows, onConflict) {
   });
 }
 
-async function supabaseRpc(functionName, payload = {}) {
+async function supabaseRpc(functionName, payload = {}, options = {}) {
   return supabaseRequest(`rpc/${functionName}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
     },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
+    ...options
   });
 }
 
@@ -1815,7 +1892,7 @@ async function supabaseRequest(path, options = {}) {
   try {
     return await client.request(path, options);
   } catch (error) {
-    if (isSupabaseAuthFailure(error) && coachSession?.refreshToken && !options._retriedAuth) {
+    if (!isPlayerPortalSupabaseRequest(options.authMode) && isSupabaseAuthFailure(error) && coachSession?.refreshToken && !options._retriedAuth) {
       await refreshCoachSession();
       return supabaseRequest(path, { ...options, _retriedAuth: true });
     }
@@ -2549,7 +2626,7 @@ function renderPlayerTeamSelector() {
 async function loadPlayerTeamByCode(teamCode) {
   const code = String(teamCode || "").trim();
   if (!code) throw new Error("יש להזין קוד צוות.");
-  const payload = await supabaseRpc("player_team_roster", { p_team_code: code });
+  const payload = await supabaseRpc("player_team_roster", { p_team_code: code }, { authMode: "player" });
   const roster = normalizeRpcPayload(payload);
   const team = roster.team;
   if (!team) throw new Error("לא נמצא צוות פעיל עבור הקוד שהוזן.");
@@ -2582,7 +2659,7 @@ async function verifyPlayerLoginWithSupabase(teamCode, playerId, pin) {
     p_team_code: String(teamCode || "").trim() || getActiveTeamSlug(),
     p_player_id: playerId,
     p_pin_code: pin
-  });
+  }, { authMode: "player" });
   const result = normalizeRpcPayload(payload);
   if (!result || !result.player || !result.team) throw new Error("שם או PIN אינם נכונים.");
   setPlayerTeamContext({ teamId: result.team.id, teamName: result.team.name, teamSlug: result.team.slug });
@@ -2655,8 +2732,16 @@ async function loadPlayerTeamsForLogin() {
   state = createEmptyState();
   renderPlayerLogin();
   try {
-    const payload = await supabaseSelect("teams", "active=eq.true&select=id,name,slug,active&order=name.asc");
-    const teams = (Array.isArray(payload) ? payload : [])
+    const payload = await supabaseSelect("teams", "active=eq.true&select=id,name,slug,active&order=name.asc", { authMode: "player" });
+    const rows = Array.isArray(payload) ? payload : [];
+    const filteredRows = rows
+      .map((team) => ({
+        id: team?.id || "",
+        name: team?.name || team?.slug || "",
+        reason: !team?.id ? "missing id" : team.active === false ? "inactive" : ""
+      }))
+      .filter((item) => item.reason);
+    const teams = rows
       .map((team) => ({
         id: team.id,
         name: team.name || team.slug || "קבוצה",
@@ -2666,10 +2751,21 @@ async function loadPlayerTeamsForLogin() {
       .filter((team) => team.id && team.active);
     uiState.playerLogin.teams = teams;
     uiState.playerLogin.teamsLoaded = true;
-    const savedTeam = getPlayerTeamContext();
     const queryTeam = new URLSearchParams(window.location.search).get("team") || "";
-    const savedTeamCode = savedTeam?.teamId === DEFAULT_DEMO_TEAM_ID ? "" : savedTeam?.teamSlug || "";
-    const preferredCode = uiState.playerLogin.selectedTeamCode || queryTeam || savedTeamCode || "";
+    const preferredCode = uiState.playerLogin.selectedTeamCode || queryTeam || "";
+    debugPlayerLogin("teams-loaded", {
+      rowsReceived: rows.length,
+      teamsVisible: teams.length,
+      envTeamId: RAW_RPE_ENV?.teamId || "",
+      coachSessionTeamId: coachSession?.teamId || "",
+      storedPlayerTeamId: getPlayerTeamContext()?.teamId || "",
+      selectedTeamCode: uiState.playerLogin.selectedTeamCode || "",
+      preferredCode,
+      teams: teams.map((team) => ({ id: team.id, name: team.name, slug: team.slug })),
+      filteredRows,
+      filteredByPlayerCount: false
+    });
+    debugLogPlayerTeamCounts(teams);
     const preferredTeam = teams.find((team) => team.slug === preferredCode || team.id === preferredCode);
     if (preferredTeam && !uiState.playerLogin.selectedTeamCode) {
       uiState.playerLogin.selectedTeamCode = preferredTeam.slug || preferredTeam.id;
@@ -2697,7 +2793,7 @@ async function loadPlayerTeamByCodeV2(teamCode, options = {}) {
   if (isSupabaseMode()) state = createEmptyState();
   if (options.renderAfterLoad !== false) renderPlayerLogin();
   try {
-    const payload = await supabaseRpc("player_team_roster", { p_team_code: code });
+    const payload = await supabaseRpc("player_team_roster", { p_team_code: code }, { authMode: "player" });
     const roster = normalizeRpcPayload(payload);
     const team = roster.team;
     if (!team) throw new Error("לא נמצאה קבוצה פעילה.");
@@ -2718,6 +2814,13 @@ async function loadPlayerTeamByCodeV2(teamCode, options = {}) {
       settings: roster.settings ? { ...DEFAULT_SETTINGS, ...roster.settings } : { ...DEFAULT_SETTINGS }
     });
     uiState.playerLogin.selectedTeamCode = team.slug || code;
+    debugPlayerLogin("roster-loaded", {
+      selectedTeamCode: code,
+      selectedTeamId: teamId,
+      selectedTeamName: team.name || "",
+      playerRows: Array.isArray(roster.players) ? roster.players.length : 0,
+      painAreaRows: Array.isArray(roster.painAreas) ? roster.painAreas.length : 0
+    });
     return state;
   } catch (error) {
     uiState.playerLogin.rosterError = error.message || "טעינת שחקני הקבוצה נכשלה.";
@@ -2729,7 +2832,7 @@ async function loadPlayerTeamByCodeV2(teamCode, options = {}) {
 }
 
 function renderPlayerLogin() {
-  if (isSupabaseMode() && !coachSession && !uiState.playerLogin.teamsLoaded && !uiState.playerLogin.teamsLoading) {
+  if (isSupabaseMode() && !uiState.playerLogin.teamsLoaded && !uiState.playerLogin.teamsLoading) {
     setTimeout(() => loadPlayerTeamsForLogin(), 0);
   }
   const html = `
@@ -2850,12 +2953,12 @@ function renderPlayerLogin() {
       const loginError = document.getElementById("loginError");
       loginError.classList.remove("show");
       try {
-        if (isSupabaseMode() && !coachSession && !selectedTeamCode) throw new Error("יש לבחור קבוצה.");
-        const player = isSupabaseMode() && !coachSession
+        if (isSupabaseMode() && !selectedTeamCode) throw new Error("יש לבחור קבוצה.");
+        const player = isSupabaseMode()
           ? await verifyPlayerLoginWithSupabase(selectedTeamCode, playerId, pin)
           : state.players.find((item) => item.id === playerId && item.active && item.pin === pin);
         if (!player) throw new Error("שם או PIN אינם נכונים.");
-        if (isSupabaseMode() && !coachSession) {
+        if (isSupabaseMode()) {
           setLoggedPlayer(player, pin);
           await loadFreshPlayerPortalState({
             playerId: player.id,
